@@ -25,6 +25,9 @@ pub struct Options {
     pub fix: bool,
     pub fix_suggestions: bool,
     pub debug_timings: bool,
+    /// Give back what the run allocated once it ends, for hosts that run many lints in one process (a language
+    /// server): without it every program stays in the arena reservation until the process exits.
+    pub free_programs: bool,
 }
 
 fn parse_flags(args: &[String]) -> Result<Options, String> {
