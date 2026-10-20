@@ -351,6 +351,12 @@ inherits = "release"
 strip = false # Keep debug information in binary
 debug = true # Include maximum amount of debug information
 
+# The napi binding with the `tsrs` feature: a panic on a tsrs path that is not ported yet fails that run's type-aware
+# pass (the in-process backend joins the lint thread) instead of ending the CLI or the language server.
+[profile.release-unwind]
+inherits = "release"
+panic = "unwind"
+
 # Profile for `cargo coverage`
 [profile.coverage]
 inherits = "release"

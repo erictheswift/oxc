@@ -181,7 +181,7 @@ impl TsGoLintState {
         let diff_manager_clone_to_ts_go = Arc::<DiffManager>::clone(diff_manager);
 
         let handler = std::thread::spawn(move || {
-            let BackendRun { messages, finish } = self.start(json_input)?;
+            let BackendRun { messages, finish } = self.start(json_input, false)?;
 
             // Process the message stream in a separate thread to send diagnostics as they arrive
             let stdout_handler = std::thread::spawn(move || -> Result<TsGoLintOutput, String> {
@@ -355,8 +355,10 @@ impl TsGoLintState {
         }
     }
 
-    /// Starts the backend on `payload`: a `tsgolint` process, or tsrslint on a thread of this process.
-    fn start(&self, payload: Payload) -> Result<BackendRun, String> {
+    /// Starts the backend on `payload`: a `tsgolint` process, or tsrslint on a thread of this process, which gives back
+    /// what the run built when `free_programs` (the language server, which lints once per request in one process).
+    #[cfg_attr(not(feature = "tsrs"), expect(unused_variables))]
+    fn start(&self, payload: Payload, free_programs: bool) -> Result<BackendRun, String> {
         match &self.backend {
             Backend::Process(executable_path) => {
                 let mut child = self.spawn_tsgolint(executable_path, &payload)?;
@@ -376,7 +378,7 @@ impl TsGoLintState {
                 })
             }
             #[cfg(feature = "tsrs")]
-            Backend::InProcess => in_process::start(self, payload),
+            Backend::InProcess => in_process::start(self, payload, free_programs),
         }
     }
 
@@ -480,7 +482,7 @@ impl TsGoLintState {
         let path_file_name =
             Path::new(paths[0].as_ref()).file_name().unwrap_or_default().to_os_string();
 
-        let BackendRun { messages, finish } = self.start(json_input)?;
+        let BackendRun { messages, finish } = self.start(json_input, true)?;
         let diagnostics = (|| -> Result<Vec<Message>, String> {
             let mut result = vec![];
 
@@ -1421,11 +1423,16 @@ mod in_process {
 
     /// Runs the rules on a tsrslint thread and streams its output through a channel, so the caller consumes it
     /// the way it reads a `tsgolint` process's stdout, without the JSON in between.
-    pub(super) fn start(state: &TsGoLintState, payload: Payload) -> Result<BackendRun, String> {
+    pub(super) fn start(
+        state: &TsGoLintState,
+        payload: Payload,
+        free_programs: bool,
+    ) -> Result<BackendRun, String> {
         let opts = linter::Options {
             fix: state.fix,
             fix_suggestions: state.fix_suggestions,
             debug_timings: state.timings,
+            free_programs,
         };
         let (tx, rx) = mpsc::sync_channel::<Result<TsGoLintMessage, String>>(4096);
         let sink: linter::Sink = Box::new(move |out| {
