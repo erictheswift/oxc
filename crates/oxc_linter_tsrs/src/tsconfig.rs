@@ -4,9 +4,11 @@
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, OnceLock};
+use std::thread::ThreadId;
 
 use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
+use tsrs_core::arena::{Region, RegionScope};
 use tsrs_core::tspath::{self, Path};
 use tsrs_core::CompilerOptions;
 use tsrs_core::P;
@@ -67,18 +69,40 @@ pub struct TsConfigResolver {
     pub ext_cache: &'static ExtendedConfigCache,
     configs: Mutex<FxHashMap<String, Arc<OnceLock<Arc<ParsedConfig>>>>>,
     directory_configs: Mutex<FxHashMap<String, String>>,
+    regions: Option<Arc<ThreadRegions>>,
+}
+
+/// A region per thread for the config parses of a run that frees its programs (`linter::Options::free_programs`),
+/// freed with them: the config pool's threads otherwise parse into their own arenas, which keep each run's configs
+/// and the file lists they own for the life of the process.
+#[derive(Default)]
+pub struct ThreadRegions(Mutex<FxHashMap<ThreadId, Region>>);
+
+impl ThreadRegions {
+    fn enter(&self) -> RegionScope {
+        let region = self
+            .0
+            .lock()
+            .unwrap()
+            .entry(std::thread::current().id())
+            .or_insert_with(|| Region::new_scratch(256 << 10))
+            .clone();
+        region.enter()
+    }
 }
 
 impl TsConfigResolver {
     pub fn new(
         host: &'static ParseHost,
         ext_cache: &'static ExtendedConfigCache,
+        regions: Option<Arc<ThreadRegions>>,
     ) -> TsConfigResolver {
         TsConfigResolver {
             host,
             ext_cache,
             configs: Mutex::new(FxHashMap::default()),
             directory_configs: Mutex::new(FxHashMap::default()),
+            regions,
         }
     }
 
@@ -172,7 +196,9 @@ impl TsConfigResolver {
                 .or_default(),
         );
         Arc::clone(cell.get_or_init(|| {
+            let _region = self.regions.as_deref().map(ThreadRegions::enter);
             let (parsed, errors) = config_pool().install(|| {
+                let _region = self.regions.as_deref().map(ThreadRegions::enter);
                 tsoptions::get_parsed_command_line_of_config_file(
                     config_file_name,
                     Some(&CompilerOptions {

@@ -2,13 +2,16 @@
 
 use std::io::{Read, Write};
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use rustc_hash::{FxHashMap, FxHashSet};
 use tsrs_ast::{self as ast, Kind, Node, SourceFile, SourceFileParseOptions};
 use tsrs_checker::Checker;
-use tsrs_compiler::{new_compiler_host, new_program, CompilerHost, Program, ProgramOptions};
+use tsrs_compiler::{
+    new_compiler_host, new_program, CompilerHost, Program, ProgramOptions, ProgramRegions,
+};
+use tsrs_core::arena::{Region, RegionScope};
 use tsrs_core::tspath::{self, Path};
 use tsrs_core::CompilerOptions;
 use tsrs_core::{Tristate, P};
@@ -18,7 +21,7 @@ use crate::overlayfs::OverlayFS;
 use crate::protocol::{self, MessageType, Output, Payload};
 use crate::rule::{Ctx, Listener, ReportedDiagnostic, Rule, RuleVisitor, KIND_SLOTS};
 use crate::rules;
-use crate::tsconfig::{ExtendedConfigCache, ParseHost, TsConfigResolver};
+use crate::tsconfig::{ExtendedConfigCache, ParseHost, ThreadRegions, TsConfigResolver};
 
 #[derive(Default, Clone)]
 pub struct Options {
@@ -212,7 +215,8 @@ pub fn run_with_sink(
 /// Rules of each payload config: one instance per distinct (name, options); unknown rules are a hard error (Go
 /// panics).
 fn build_rule_sets(payload: &Payload) -> Result<Vec<RuleSet>, String> {
-    let mut rule_cache: FxHashMap<String, &'static dyn Rule> = FxHashMap::default();
+    static RULES: LazyLock<Mutex<FxHashMap<String, &'static dyn Rule>>> = LazyLock::new(Default::default);
+    let mut rule_cache = RULES.lock().unwrap_or_else(PoisonError::into_inner);
     let mut rule_sets: Vec<RuleSet> = Vec::new();
     for config in &payload.configs {
         let mut set = RuleSet { rules: Vec::new() };
@@ -251,18 +255,21 @@ fn lint(
 ) -> (Sink, Result<(), String>) {
     crate::memstats::mark("run start");
     use_sparse_id_pages();
-    let fs = base_fs(payload);
-    let host: &'static ParseHost = Box::leak(Box::new(ParseHost {
-        fs: Arc::clone(&fs),
-        cwd: cwd.to_string(),
-    }));
-    let ext_cache: &'static ExtendedConfigCache = Box::leak(Box::default());
-    let declarations: &'static DeclarationCache = Box::leak(Box::default());
-
     let rule_sets = match build_rule_sets(payload) {
         Ok(sets) => sets,
         Err(e) => return (sink, Err(e)),
     };
+
+    let run = opts.free_programs.then(RunMemory::new);
+    let fs = base_fs(payload);
+    let host = RunMemory::leak(ParseHost {
+        fs: Arc::clone(&fs),
+        cwd: cwd.to_string(),
+    });
+    let ext_cache = RunMemory::leak(ExtendedConfigCache::default());
+    let declarations = RunMemory::leak(DeclarationCache::default());
+    let mut built: Vec<(&'static Program, Option<Arc<ProgramRegions>>)> = Vec::new();
+    let program_regions = || opts.free_programs.then(|| Arc::new(ProgramRegions::default()));
 
     // File -> rule set.
     let use_case_sensitive = fs.use_case_sensitive_file_names();
@@ -279,7 +286,8 @@ fn lint(
         "Starting to assign files to programs. Total files: {}",
         files.len()
     ));
-    let resolver = TsConfigResolver::new(host, ext_cache);
+    let resolver =
+        TsConfigResolver::new(host, ext_cache, run.as_ref().map(|r| Arc::clone(&r.configs)));
     let assignment = resolver.resolve_all(&files);
     crate::memstats::mark("files assigned to configs");
     let mut programs: Vec<(String, Vec<String>)> = Vec::new();
@@ -354,7 +362,12 @@ fn lint(
         let mut popts = ProgramOptions::new(config, compiler_host);
         popts.use_source_of_project_reference = true;
         popts.single_threaded = Tristate::False;
+        popts.checker_regions = opts.free_programs;
+        popts.checker_regions_keep_escapes = opts.free_programs;
+        popts.regions = program_regions();
+        let regions = popts.regions.clone();
         let program = new_program(popts);
+        built.push((program, regions));
         let program_diags = program.get_program_diagnostics();
         if !program_diags.is_empty() && !suppress_program_diagnostics() {
             for d in &program_diags {
@@ -417,7 +430,12 @@ fn lint(
         ));
         let mut popts = ProgramOptions::new(config, compiler_host);
         popts.single_threaded = Tristate::False;
+        popts.checker_regions = opts.free_programs;
+        popts.checker_regions_keep_escapes = opts.free_programs;
+        popts.regions = program_regions();
+        let regions = popts.regions.clone();
         let program = new_program(popts);
+        built.push((program, regions));
         program.bind_source_files();
         let wanted: FxHashSet<Path> = unmatched
             .iter()
@@ -432,6 +450,23 @@ fn lint(
         crate::memstats::mark("inferred program built");
         lint_program(program, &source_files, payload, &ctx);
         crate::memstats::mark("inferred program linted");
+    }
+
+    if let Some(run) = run {
+        drop(resolver);
+        for (program, regions) in built.into_iter().rev() {
+            // SAFETY: the lint is over: no checker of the program is held, the diagnostics sent are owned values, and
+            // each program is a full build that shares nothing with another.
+            unsafe { tsrs_compiler::free_unshared_program(program) };
+            drop(regions);
+        }
+        // SAFETY: only the resolver and the programs' hosts borrowed them, and both are gone.
+        unsafe {
+            RunMemory::reclaim(declarations);
+            RunMemory::reclaim(ext_cache);
+            RunMemory::reclaim(host);
+        }
+        drop(run);
     }
 
     drop(tx);
@@ -481,6 +516,31 @@ fn suppress_program_diagnostics() -> bool {
 }
 
 struct ProgramExtCache(&'static ExtendedConfigCache);
+
+/// `Options::free_programs`: what the run allocates on its own thread (program shells) goes to a region freed with the
+/// run, config parses to `configs`; the file loader and the checkers allocate in each program's regions.
+struct RunMemory {
+    _scope: RegionScope,
+    _region: Region,
+    configs: Arc<ThreadRegions>,
+}
+
+impl RunMemory {
+    fn new() -> RunMemory {
+        let region = Region::new_scratch(1 << 20);
+        RunMemory { _scope: region.enter(), _region: region, configs: Arc::default() }
+    }
+
+    fn leak<T>(value: T) -> &'static T {
+        Box::leak(Box::new(value))
+    }
+
+    /// # Safety
+    /// `value` came from `leak`, and nothing refers to it any more.
+    unsafe fn reclaim<T>(value: &'static T) {
+        drop(unsafe { Box::from_raw(std::ptr::from_ref(value).cast_mut()) });
+    }
+}
 
 /// Declaration and JSON files parsed for one program, by parse options.
 type DeclarationCache = Mutex<FxHashMap<SourceFileParseOptions, P<SourceFile>>>;

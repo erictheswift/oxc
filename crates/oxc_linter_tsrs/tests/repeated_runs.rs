@@ -13,7 +13,7 @@ fn project() -> std::path::PathBuf {
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(
         dir.join("tsconfig.json"),
-        r#"{ "compilerOptions": { "target": "es2020", "lib": ["es2020"], "strict": true } }"#,
+        r#"{ "compilerOptions": { "target": "es2020", "lib": ["es2020", "dom"], "strict": true } }"#,
     )
     .unwrap();
     std::fs::write(
@@ -57,9 +57,11 @@ fn diagnostics(dir: &std::path::Path, opts: &Options) -> Vec<String> {
 #[test]
 fn repeated_runs_give_their_memory_back() {
     let dir = project();
-    let opts = Options { free_programs: true, ..Options::default() };
-    let expected = diagnostics(&dir, &opts);
+    let start = reserved_in_use();
+    let expected = diagnostics(&dir, &Options::default());
+    let one_program = reserved_in_use() - start;
     assert_eq!(expected.len(), 1, "{expected:?}");
+    let opts = Options { free_programs: true, ..Options::default() };
     for _ in 0..3 {
         assert_eq!(diagnostics(&dir, &opts), expected);
     }
@@ -68,6 +70,11 @@ fn repeated_runs_give_their_memory_back() {
         assert_eq!(diagnostics(&dir, &opts), expected);
     }
     let grown = reserved_in_use().saturating_sub(before);
-    assert!(grown < 1 << 20, "20 runs kept {} KiB of the arena reservation", grown >> 10);
+    assert!(
+        grown < one_program,
+        "20 runs kept {} KiB of the arena reservation, one kept program takes {} KiB",
+        grown >> 10,
+        one_program >> 10
+    );
     std::fs::remove_dir_all(&dir).ok();
 }
