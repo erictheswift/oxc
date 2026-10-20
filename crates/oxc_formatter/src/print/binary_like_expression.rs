@@ -581,8 +581,8 @@ fn split_into_left_and_right_sides<'a, 'b>(
     inside_condition: bool,
     f: &JsFormatter<'_, 'a>,
 ) -> Vec<BinaryLeftOrRightSide<'a, 'b>> {
-    // Stores the left and right parts of the binary expression in sequence (rather than nested as they
-    // appear in the tree), walking down the left sides in reverse order.
+    // Stores the left and right parts of the binary expression in sequence
+    // (rather than nested as they appear in the tree), walking down the left sides in reverse order.
     // `with_capacity(2)` because we expect at least 2 items (left and right).
     let mut items = Vec::with_capacity(2);
 
@@ -593,8 +593,8 @@ fn split_into_left_and_right_sides<'a, 'b>(
             break;
         }
 
-        // We can flatten the left hand side, so we need to check if we have a nested binary expression
-        // that we can flatten.
+        // We can flatten the left hand side,
+        // so we need to check if we have a nested binary expression that we can flatten.
         binary = binary.flattened_left(f.allocator());
     }
 
