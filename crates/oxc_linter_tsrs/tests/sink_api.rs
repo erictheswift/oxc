@@ -3,7 +3,7 @@
 
 use std::sync::mpsc;
 
-use oxc_linter_tsrs::linter::{Options, Sink, spawn};
+use oxc_linter_tsrs::linter::{spawn, Options, Sink};
 use oxc_linter_tsrs::protocol::{HeadlessConfig, HeadlessRule, Output, Payload};
 
 fn project(name: &str) -> std::path::PathBuf {
@@ -23,7 +23,10 @@ fn run(dir: &std::path::Path, file: &std::path::Path, rule: &str) -> Vec<Output>
         version: 2,
         configs: vec![HeadlessConfig {
             file_paths: vec![file.to_string_lossy().into_owned()],
-            rules: vec![HeadlessRule { name: rule.to_string(), options: None }],
+            rules: vec![HeadlessRule {
+                name: rule.to_string(),
+                options: None,
+            }],
         }],
         source_overrides: None,
         report_syntactic: false,
@@ -31,8 +34,10 @@ fn run(dir: &std::path::Path, file: &std::path::Path, rule: &str) -> Vec<Output>
     };
     let (tx, rx) = mpsc::channel();
     let sink: Sink = Box::new(move |out| tx.send(out).unwrap());
-    let result =
-        spawn(payload, &dir.to_string_lossy(), Options::default(), sink).unwrap().join().unwrap();
+    let result = spawn(payload, &dir.to_string_lossy(), Options::default(), sink)
+        .unwrap()
+        .join()
+        .unwrap();
     let outputs: Vec<Output> = rx.into_iter().collect();
     match (&result, outputs.last()) {
         (Ok(()), Some(Output::Error(e))) => panic!("ok run ended with an error message: {e}"),
@@ -60,7 +65,10 @@ fn host_receives_rule_diagnostics_through_the_sink() {
         .collect();
     assert_eq!(diags.len(), 1, "{outputs:?}");
     assert_eq!(diags[0].rule.as_deref(), Some("no-floating-promises"));
-    assert_eq!(diags[0].file_path.as_deref(), Some(&*file.to_string_lossy()));
+    assert_eq!(
+        diags[0].file_path.as_deref(),
+        Some(&*file.to_string_lossy())
+    );
     assert!(diags[0].range.is_some());
     std::fs::remove_dir_all(&dir).ok();
 }
@@ -71,6 +79,9 @@ fn failed_run_ends_with_an_error_message() {
     let file = dir.join("a.ts");
     std::fs::write(&file, "export {};\n").unwrap();
     let outputs = run(&dir, &file, "no-such-rule");
-    assert!(matches!(outputs.last(), Some(Output::Error(_))), "{outputs:?}");
+    assert!(
+        matches!(outputs.last(), Some(Output::Error(_))),
+        "{outputs:?}"
+    );
     std::fs::remove_dir_all(&dir).ok();
 }

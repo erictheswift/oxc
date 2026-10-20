@@ -1,26 +1,26 @@
 // Port of internal/rule_tester/rule_tester.go: runs tsgolint's own rule test cases (extracted to
 // tests/cases/<rule>.json by tools/extract_rule_tests) against the Rust rules.
 //
-// Each case gets a fresh program over tests/fixtures (tsgolint's fixture directory, kept in this
-// crate) with the case's code overlaid on file.ts / react.tsx. Parsed files are cached across programs
+// Each case gets a fresh program over internal/rules/fixtures (tsgolint's fixture directory, kept in this
+// repository) with the case's code overlaid on file.ts / react.tsx. Parsed files are cached across programs
 // (like tsrs's conformance runner and Go's harness) so the lib files are parsed once per thread.
 
 use std::cell::RefCell;
 use std::fmt::Write as _;
 use std::sync::Arc;
 
-use oxc_linter_tsrs::linter::{Options, apply_rule_fixes, lint_files};
-use oxc_linter_tsrs::overlayfs::OverlayFS;
-use oxc_linter_tsrs::rule::{ReportedDiagnostic, Rule};
-use oxc_linter_tsrs::tsconfig::ParseHost;
 use rustc_hash::FxHashMap;
 use serde::Deserialize;
 use tsrs_ast::{SourceFile, SourceFileParseOptions};
-use tsrs_compiler::{CompilerHost, ProgramOptions, new_compiler_host, new_program};
+use tsrs_compiler::{new_compiler_host, new_program, CompilerHost, ProgramOptions};
 use tsrs_core::tspath::{self, Path};
-use tsrs_core::{CompilerOptions, P, ScriptKind, Tristate};
+use tsrs_core::{CompilerOptions, ScriptKind, Tristate, P};
 use tsrs_tsoptions::{self as tsoptions, ParsedCommandLine};
-use tsrs_vfs::{FS, bundled, cachedvfs, osvfs};
+use tsrs_vfs::{bundled, cachedvfs, osvfs, FS};
+use oxc_linter_tsrs::linter::{apply_rule_fixes, lint_files, Options};
+use oxc_linter_tsrs::overlayfs::OverlayFS;
+use oxc_linter_tsrs::rule::{ReportedDiagnostic, Rule};
+use oxc_linter_tsrs::tsconfig::ParseHost;
 
 #[derive(Deserialize)]
 struct Cases {
@@ -82,11 +82,8 @@ struct CaseSuggestion {
     output: String,
 }
 
-/// Parsed files by (file name, external-module `jsx`, external-module `force`, text).
-type SourceFileCache = FxHashMap<(String, bool, bool, String), P<SourceFile>>;
-
 thread_local! {
-    static SOURCE_FILE_CACHE: RefCell<SourceFileCache> = RefCell::new(FxHashMap::default());
+    static SOURCE_FILE_CACHE: RefCell<FxHashMap<(String, bool, bool, String), P<SourceFile>>> = RefCell::new(FxHashMap::default());
 }
 
 struct CachedCompilerHost {
@@ -120,6 +117,16 @@ impl CompilerHost for CachedCompilerHost {
         let sf = tsrs_parser::parse_source_file(opts, &text, script_kind);
         SOURCE_FILE_CACHE.with(|c| c.borrow_mut().insert(key, sf));
         Some(sf)
+    }
+    fn get_content_mapped_source_files(
+        &self,
+        opts: SourceFileParseOptions,
+        mapper: &tsrs_contentmapper::Mapper,
+    ) -> Result<tsrs_contentmapper::SourceFiles, tsrs_contentmapper::Error> {
+        self.inner.get_content_mapped_source_files(opts, mapper)
+    }
+    fn content_mapper_project(&self) -> Option<Arc<dyn tsrs_contentmapper::Project>> {
+        self.inner.content_mapper_project()
     }
     fn get_resolved_project_reference(
         &self,
@@ -165,8 +172,10 @@ fn run_linter(
         virtual_files.insert(tspath::resolve_path(root, &[k]), v.clone());
     }
     let fs: Arc<dyn FS> = Arc::new(OverlayFS::new(base_fs(), virtual_files));
-    let host: &'static ParseHost =
-        Box::leak(Box::new(ParseHost { fs: fs.clone(), cwd: root.to_string() }));
+    let host: &'static ParseHost = Box::leak(Box::new(ParseHost {
+        fs: fs.clone(),
+        cwd: root.to_string(),
+    }));
     let (parsed, errors) = tsoptions::get_parsed_command_line_of_config_file(
         tsconfig,
         Some(&CompilerOptions::default()),
@@ -178,7 +187,7 @@ fn run_linter(
         return Err(format!("tsconfig errors: {}", errors.len()));
     }
     let config = P::new(parsed.ok_or("no config")?);
-    let inner = new_compiler_host(root, fs, &bundled::lib_path(), None, None);
+    let inner = new_compiler_host(root, fs, &bundled::lib_path(), None, None, None);
     let compiler_host: Arc<dyn CompilerHost> = Arc::new(CachedCompilerHost { inner });
     let mut popts = ProgramOptions::new(config, compiler_host);
     popts.use_source_of_project_reference = true;
@@ -192,19 +201,19 @@ fn run_linter(
         .copied()
         .find(|sf| *sf.path() == path)
         .ok_or_else(|| format!("{resolved} not in program"))?;
-    let opts = Options { fix: true, fix_suggestions: true, debug_timings: false };
+    let opts = Options {
+        fix: true,
+        fix_suggestions: true,
+        ..Options::default()
+    };
     Ok((lint_files(program, &[sf], &[rule], &opts), sf))
 }
 
 fn line_col(file: P<SourceFile>, pos: i32) -> (i32, i32) {
-    let (line, col) = tsrs_scanner::get_ecma_line_and_utf16_character_of_position(&*file, pos);
-    (line + 1, col + 1)
+    let (line, col) =
+        tsrs_scanner::get_ecma_line_and_utf16_character_of_position(&*file, pos as u32);
+    (line as i32 + 1, col as i32 + 1)
 }
-
-/// Invalid cases (rule, group, index) that import Node builtins and need `@types/node` resolvable from
-/// `tests/fixtures`, which this workspace does not install.
-const NEEDS_TYPES_NODE: &[(&str, usize, usize)] =
-    &[("no-deprecated", 0, 56), ("no-deprecated", 0, 125)];
 
 /// Runs every converted case of `rule`; returns (passed, failed descriptions, skipped).
 fn run_cases(rule_name: &str) -> (usize, Vec<String>, usize, usize) {
@@ -215,7 +224,10 @@ fn run_cases(rule_name: &str) -> (usize, Vec<String>, usize, usize) {
     let mut passed = 0;
     let mut skipped = 0;
     let mut failures = Vec::new();
-    let only_mode = cases.groups.iter().any(|g| g.valid.iter().chain(&g.invalid).any(|c| c.only));
+    let only_mode = cases
+        .groups
+        .iter()
+        .any(|g| g.valid.iter().chain(&g.invalid).any(|c| c.only));
     let mut rule_cache: FxHashMap<String, &'static dyn Rule> = FxHashMap::default();
     let mut get_rule = |options: &Option<serde_json::Value>| -> Result<&'static dyn Rule, String> {
         let key = options.as_ref().map(|o| o.to_string()).unwrap_or_default();
@@ -241,8 +253,20 @@ fn run_cases(rule_name: &str) -> (usize, Vec<String>, usize, usize) {
                     continue;
                 }
             };
-            let tsconfig = if c.tsconfig.is_empty() { &g.tsconfig } else { &c.tsconfig };
-            match run_linter(&root, tsconfig, rule, &c.code, &c.file_name, c.tsx, &c.files) {
+            let tsconfig = if c.tsconfig.is_empty() {
+                &g.tsconfig
+            } else {
+                &c.tsconfig
+            };
+            match run_linter(
+                &root,
+                tsconfig,
+                rule,
+                &c.code,
+                &c.file_name,
+                c.tsx,
+                &c.files,
+            ) {
                 Ok((diags, _)) if diags.is_empty() => passed += 1,
                 Ok((diags, _)) => failures.push(format!(
                     "valid-{gi}-{i}: expected no errors, got {:?}\n{}",
@@ -253,7 +277,7 @@ fn run_cases(rule_name: &str) -> (usize, Vec<String>, usize, usize) {
             }
         }
         for (i, c) in g.invalid.iter().enumerate() {
-            if c.skip || NEEDS_TYPES_NODE.contains(&(rule_name, gi, i)) || (only_mode && !c.only) {
+            if c.skip || (only_mode && !c.only) {
                 skipped += 1;
                 continue;
             }
@@ -265,16 +289,27 @@ fn run_cases(rule_name: &str) -> (usize, Vec<String>, usize, usize) {
                     continue;
                 }
             };
-            let tsconfig = if c.tsconfig.is_empty() { &g.tsconfig } else { &c.tsconfig };
+            let tsconfig = if c.tsconfig.is_empty() {
+                &g.tsconfig
+            } else {
+                &c.tsconfig
+            };
             let mut problems = String::new();
-            let first =
-                match run_linter(&root, tsconfig, rule, &c.code, &c.file_name, c.tsx, &c.files) {
-                    Ok(r) => r,
-                    Err(e) => {
-                        failures.push(format!("invalid-{gi}-{i}: {e}"));
-                        continue;
-                    }
-                };
+            let first = match run_linter(
+                &root,
+                tsconfig,
+                rule,
+                &c.code,
+                &c.file_name,
+                c.tsx,
+                &c.files,
+            ) {
+                Ok(r) => r,
+                Err(e) => {
+                    failures.push(format!("invalid-{gi}-{i}: {e}"));
+                    continue;
+                }
+            };
             // Fix loop (up to 10 passes).
             let mut outputs = Vec::new();
             let mut code = c.code.clone();
@@ -299,7 +334,10 @@ fn run_cases(rule_name: &str) -> (usize, Vec<String>, usize, usize) {
                 }
                 let (fixed_code, fixed) = apply_rule_fixes(
                     &code,
-                    diags.iter().map(|d| d.fixes.clone().unwrap_or_default()).collect(),
+                    diags
+                        .iter()
+                        .map(|d| d.fixes.clone().unwrap_or_default())
+                        .collect(),
                 );
                 if !fixed {
                     break;
@@ -364,11 +402,7 @@ fn run_cases(rule_name: &str) -> (usize, Vec<String>, usize, usize) {
                             } else {
                                 let (out, _) = apply_rule_fixes(&c.code, vec![s.fixes.clone()]);
                                 if out != es.output {
-                                    let _ = write!(
-                                        problems,
-                                        "error {j} suggestion {k}: output {out:?} != expected {:?}; ",
-                                        es.output
-                                    );
+                                    let _ = write!(problems, "error {j} suggestion {k}: output {out:?} != expected {:?}; ", es.output);
                                 }
                             }
                         }
@@ -393,14 +427,15 @@ fn check(rule_name: &str) {
         }
     }
     let (passed, failures, skipped, unconverted) = run_cases(rule_name);
-    eprintln!(
-        "[{rule_name}] passed {passed}, failed {}, skipped {skipped}, unconverted (not extracted) {unconverted}",
-        failures.len()
-    );
+    eprintln!("[{rule_name}] passed {passed}, failed {}, skipped {skipped}, unconverted (not extracted) {unconverted}", failures.len());
     for f in &failures {
         eprintln!("[{rule_name}] FAIL {f}\n");
     }
-    assert!(failures.is_empty(), "{rule_name}: {} failing cases", failures.len());
+    assert!(
+        failures.is_empty(),
+        "{rule_name}: {} failing cases",
+        failures.len()
+    );
 }
 
 macro_rules! rule_test {
@@ -426,24 +461,51 @@ rule_test!(no_array_delete, "no-array-delete");
 rule_test!(no_base_to_string, "no-base-to-string");
 rule_test!(no_confusing_void_expression, "no-confusing-void-expression");
 rule_test!(no_deprecated, "no-deprecated");
-rule_test!(no_duplicate_type_constituents, "no-duplicate-type-constituents");
+rule_test!(
+    no_duplicate_type_constituents,
+    "no-duplicate-type-constituents"
+);
 rule_test!(no_floating_promises, "no-floating-promises");
-rule_test!(no_generated_empty_object_type, "no-generated-empty-object-type");
+rule_test!(
+    no_generated_empty_object_type,
+    "no-generated-empty-object-type"
+);
 rule_test!(no_for_in_array, "no-for-in-array");
 rule_test!(no_implied_eval, "no-implied-eval");
 rule_test!(no_meaningless_void_operator, "no-meaningless-void-operator");
 rule_test!(no_misused_promises, "no-misused-promises");
 rule_test!(no_misused_spread, "no-misused-spread");
 rule_test!(no_mixed_enums, "no-mixed-enums");
-rule_test!(no_redundant_type_constituents, "no-redundant-type-constituents");
-rule_test!(no_unnecessary_boolean_literal_compare, "no-unnecessary-boolean-literal-compare");
+rule_test!(
+    no_redundant_type_constituents,
+    "no-redundant-type-constituents"
+);
+rule_test!(
+    no_unnecessary_boolean_literal_compare,
+    "no-unnecessary-boolean-literal-compare"
+);
 rule_test!(no_unnecessary_condition, "no-unnecessary-condition");
 rule_test!(no_unnecessary_qualifier, "no-unnecessary-qualifier");
-rule_test!(no_unnecessary_template_expression, "no-unnecessary-template-expression");
-rule_test!(no_unnecessary_type_arguments, "no-unnecessary-type-arguments");
-rule_test!(no_unnecessary_type_assertion, "no-unnecessary-type-assertion");
-rule_test!(no_unnecessary_type_conversion, "no-unnecessary-type-conversion");
-rule_test!(no_unnecessary_type_parameters, "no-unnecessary-type-parameters");
+rule_test!(
+    no_unnecessary_template_expression,
+    "no-unnecessary-template-expression"
+);
+rule_test!(
+    no_unnecessary_type_arguments,
+    "no-unnecessary-type-arguments"
+);
+rule_test!(
+    no_unnecessary_type_assertion,
+    "no-unnecessary-type-assertion"
+);
+rule_test!(
+    no_unnecessary_type_conversion,
+    "no-unnecessary-type-conversion"
+);
+rule_test!(
+    no_unnecessary_type_parameters,
+    "no-unnecessary-type-parameters"
+);
 rule_test!(no_unsafe_argument, "no-unsafe-argument");
 rule_test!(no_unsafe_assignment, "no-unsafe-assignment");
 rule_test!(no_unsafe_call, "no-unsafe-call");
@@ -452,8 +514,14 @@ rule_test!(no_unsafe_member_access, "no-unsafe-member-access");
 rule_test!(no_unsafe_return, "no-unsafe-return");
 rule_test!(no_unsafe_type_assertion, "no-unsafe-type-assertion");
 rule_test!(no_unsafe_unary_minus, "no-unsafe-unary-minus");
-rule_test!(no_useless_default_assignment, "no-useless-default-assignment");
-rule_test!(non_nullable_type_assertion_style, "non-nullable-type-assertion-style");
+rule_test!(
+    no_useless_default_assignment,
+    "no-useless-default-assignment"
+);
+rule_test!(
+    non_nullable_type_assertion_style,
+    "non-nullable-type-assertion-style"
+);
 rule_test!(only_throw_error, "only-throw-error");
 rule_test!(prefer_find, "prefer-find");
 rule_test!(prefer_includes, "prefer-includes");
@@ -461,20 +529,32 @@ rule_test!(prefer_nullish_coalescing, "prefer-nullish-coalescing");
 rule_test!(prefer_optional_chain, "prefer-optional-chain");
 rule_test!(prefer_promise_reject_errors, "prefer-promise-reject-errors");
 rule_test!(prefer_readonly, "prefer-readonly");
-rule_test!(prefer_readonly_parameter_types, "prefer-readonly-parameter-types");
+rule_test!(
+    prefer_readonly_parameter_types,
+    "prefer-readonly-parameter-types"
+);
 rule_test!(prefer_reduce_type_parameter, "prefer-reduce-type-parameter");
 rule_test!(prefer_regexp_exec, "prefer-regexp-exec");
 rule_test!(prefer_return_this_type, "prefer-return-this-type");
-rule_test!(prefer_string_starts_ends_with, "prefer-string-starts-ends-with");
+rule_test!(
+    prefer_string_starts_ends_with,
+    "prefer-string-starts-ends-with"
+);
 rule_test!(promise_function_async, "promise-function-async");
 rule_test!(related_getter_setter_pairs, "related-getter-setter-pairs");
 rule_test!(require_array_sort_compare, "require-array-sort-compare");
 rule_test!(require_await, "require-await");
 rule_test!(restrict_plus_operands, "restrict-plus-operands");
-rule_test!(restrict_template_expressions, "restrict-template-expressions");
+rule_test!(
+    restrict_template_expressions,
+    "restrict-template-expressions"
+);
 rule_test!(return_await, "return-await");
 rule_test!(strict_boolean_expressions, "strict-boolean-expressions");
 rule_test!(strict_void_return, "strict-void-return");
 rule_test!(switch_exhaustiveness_check, "switch-exhaustiveness-check");
 rule_test!(unbound_method, "unbound-method");
-rule_test!(use_unknown_in_catch_callback_variable, "use-unknown-in-catch-callback-variable");
+rule_test!(
+    use_unknown_in_catch_callback_variable,
+    "use-unknown-in-catch-callback-variable"
+);
