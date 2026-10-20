@@ -8,15 +8,15 @@ use std::time::{Duration, Instant};
 use rustc_hash::{FxHashMap, FxHashSet};
 use tsrs_ast::{self as ast, Kind, Node, SourceFile, SourceFileParseOptions};
 use tsrs_checker::Checker;
-use tsrs_compiler::{CompilerHost, Program, ProgramOptions, new_compiler_host, new_program};
-use tsrs_core::CompilerOptions;
+use tsrs_compiler::{new_compiler_host, new_program, CompilerHost, Program, ProgramOptions};
 use tsrs_core::tspath::{self, Path};
-use tsrs_core::{P, Tristate};
-use tsrs_vfs::{FS, bundled, cachedvfs, osvfs};
+use tsrs_core::CompilerOptions;
+use tsrs_core::{Tristate, P};
+use tsrs_vfs::{bundled, cachedvfs, osvfs, FS};
 
 use crate::overlayfs::OverlayFS;
 use crate::protocol::{self, MessageType, Output, Payload};
-use crate::rule::{Ctx, KIND_SLOTS, Listener, ReportedDiagnostic, Rule, RuleVisitor};
+use crate::rule::{Ctx, Listener, ReportedDiagnostic, Rule, RuleVisitor, KIND_SLOTS};
 use crate::rules;
 use crate::tsconfig::{ExtendedConfigCache, ParseHost, TsConfigResolver};
 
@@ -134,8 +134,10 @@ pub fn spawn(
 ) -> std::io::Result<std::thread::JoinHandle<Result<(), String>>> {
     let cwd = tspath::normalize_path(cwd);
     let debug = std::env::var("OXC_LOG").is_ok_and(|v| v == "debug");
-    std::thread::Builder::new().name("tsrslint".to_string()).stack_size(512 << 20).spawn(
-        move || {
+    std::thread::Builder::new()
+        .name("tsrslint".to_string())
+        .stack_size(512 << 20)
+        .spawn(move || {
             let t0 = Instant::now();
             let log = |msg: String| {
                 if debug {
@@ -147,8 +149,7 @@ pub fn spawn(
                 crate::sched::report_totals(t0.elapsed());
             }
             result
-        },
-    )
+        })
 }
 
 /// The FS of the config parses and of every program. Its cache is the only one: program hosts use it as is
@@ -216,7 +217,10 @@ fn build_rule_sets(payload: &Payload) -> Result<Vec<RuleSet>, String> {
             let key = format!(
                 "{}\u{0}{}",
                 r.name,
-                r.options.as_ref().map(|o| o.to_string()).unwrap_or_default()
+                r.options
+                    .as_ref()
+                    .map(|o| o.to_string())
+                    .unwrap_or_default()
             );
             let rule = match rule_cache.get(&key) {
                 Some(r) => *r,
@@ -245,8 +249,10 @@ fn lint(
     crate::memstats::mark("run start");
     use_sparse_id_pages();
     let fs = base_fs(payload);
-    let host: &'static ParseHost =
-        Box::leak(Box::new(ParseHost { fs: Arc::clone(&fs), cwd: cwd.to_string() }));
+    let host: &'static ParseHost = Box::leak(Box::new(ParseHost {
+        fs: Arc::clone(&fs),
+        cwd: cwd.to_string(),
+    }));
     let ext_cache: &'static ExtendedConfigCache = Box::leak(Box::default());
     let declarations: &'static DeclarationCache = Box::leak(Box::default());
 
@@ -266,7 +272,10 @@ fn lint(
             files.push(normalized);
         }
     }
-    log(format!("Starting to assign files to programs. Total files: {}", files.len()));
+    log(format!(
+        "Starting to assign files to programs. Total files: {}",
+        files.len()
+    ));
     let resolver = TsConfigResolver::new(host, ext_cache);
     let assignment = resolver.resolve_all(&files);
     crate::memstats::mark("files assigned to configs");
@@ -335,6 +344,7 @@ fn lint(
                 &bundled::lib_path(),
                 Some(Arc::new(ProgramExtCache(ext_cache))),
                 None,
+                None,
             ),
             declarations,
         );
@@ -350,7 +360,10 @@ fn lint(
             continue;
         }
         program.bind_source_files();
-        log(format!("Program created with {} source files", program.source_files().len()));
+        log(format!(
+            "Program created with {} source files",
+            program.source_files().len()
+        ));
         let wanted: FxHashMap<Path, &String> = config_files
             .iter()
             .map(|f| (tspath::to_path(f, &dir, use_case_sensitive), f))
@@ -375,13 +388,17 @@ fn lint(
     }
 
     if result.is_ok() && !unmatched.is_empty() {
-        log(format!("Running linter on inferred program with {} files", unmatched.len()));
+        log(format!(
+            "Running linter on inferred program with {} files",
+            unmatched.len()
+        ));
         let compiler_host = shared_declarations_host(
             new_compiler_host(
                 cwd,
                 Arc::clone(&fs),
                 &bundled::lib_path(),
                 Some(Arc::new(ProgramExtCache(ext_cache))),
+                None,
                 None,
             ),
             declarations,
@@ -399,8 +416,10 @@ fn lint(
         popts.single_threaded = Tristate::False;
         let program = new_program(popts);
         program.bind_source_files();
-        let wanted: FxHashSet<Path> =
-            unmatched.iter().map(|f| tspath::to_path(f, cwd, use_case_sensitive)).collect();
+        let wanted: FxHashSet<Path> = unmatched
+            .iter()
+            .map(|f| tspath::to_path(f, cwd, use_case_sensitive))
+            .collect();
         let source_files: Vec<P<SourceFile>> = program
             .source_files()
             .iter()
@@ -435,7 +454,9 @@ fn lint(
             .collect();
         // RuleTimingStore.Collect's order: slowest first, ties by name.
         rules.sort_by(|a, b| {
-            b.duration.cmp(&a.duration).then_with(|| a.rule_name.cmp(&b.rule_name))
+            b.duration
+                .cmp(&a.duration)
+                .then_with(|| a.rule_name.cmp(&b.rule_name))
         });
         sink(Output::Timing(protocol::TimingPayload { rules }));
     }
@@ -505,6 +526,16 @@ impl CompilerHost for SharedDeclarationsHost {
         let file = self.inner.get_source_file(opts.clone())?;
         Some(*self.cache.lock().unwrap().entry(opts).or_insert(file))
     }
+    fn get_content_mapped_source_files(
+        &self,
+        opts: SourceFileParseOptions,
+        mapper: &tsrs_contentmapper::Mapper,
+    ) -> Result<tsrs_contentmapper::SourceFiles, tsrs_contentmapper::Error> {
+        self.inner.get_content_mapped_source_files(opts, mapper)
+    }
+    fn content_mapper_project(&self) -> Option<Arc<dyn tsrs_contentmapper::Project>> {
+        self.inner.content_mapper_project()
+    }
     fn get_resolved_project_reference(
         &self,
         file_name: &str,
@@ -522,7 +553,8 @@ impl tsrs_tsoptions::ExtendedConfigCache for ProgramExtCache {
         resolution_stack: &[Path],
         host: &'static dyn tsrs_tsoptions::ParseConfigHost,
     ) -> P<tsrs_tsoptions::ExtendedConfigCacheEntry> {
-        self.0.get_extended_config(file_name, path, resolution_stack, host)
+        self.0
+            .get_extended_config(file_name, path, resolution_stack, host)
     }
 }
 
@@ -561,7 +593,6 @@ fn send_internal_tsconfig_diag(
         .map(|f| f.file_name().to_string())
         .filter(|f| !f.is_empty())
         .unwrap_or_else(|| config_file_name.to_string());
-    let loc = d.loc();
     let mut help = diagnostic_text(d);
     if help.contains("Please remove it from your configuration.") {
         help.push_str(
@@ -570,7 +601,7 @@ fn send_internal_tsconfig_diag(
     }
     let _ = tx.send(protocol::Diagnostic {
         kind: 1,
-        range: Some(protocol::Range { pos: loc.pos(), end: loc.end() }),
+        range: d.loc().map(protocol::Range::from),
         message: protocol::Message {
             id: "tsconfig-error".to_string(),
             description: "Invalid tsconfig".to_string(),
@@ -616,10 +647,9 @@ fn report_typescript_diagnostics(
             if d.file().map(|f| f.file_name() == file.file_name()) != Some(true) {
                 continue;
             }
-            let loc = d.loc();
             let _ = tx.send(protocol::Diagnostic {
                 kind: 1,
-                range: Some(protocol::Range { pos: loc.pos(), end: loc.end() }),
+                range: d.loc().map(protocol::Range::from),
                 message: protocol::Message {
                     id: format!("TS{}", d.code()),
                     description: diagnostic_text(d),
@@ -645,8 +675,9 @@ fn lint_program(
     // Each file goes to the checker tsrs assigned it (import-graph locality) until that checker runs out, then to
     // whichever checker is free (sched.rs): with a shared queue every checker resolves the types of nearly every
     // module.
-    let todo: Vec<usize> =
-        (0..files.len()).filter(|&i| lctx.file_rules.contains_key(files[i].path())).collect();
+    let todo: Vec<usize> = (0..files.len())
+        .filter(|&i| lctx.file_rules.contains_key(files[i].path()))
+        .collect();
     crate::sched::for_each_file(
         program,
         files,
@@ -711,8 +742,11 @@ pub fn apply_rule_fixes(
     for f in &mut fix_sets {
         f.sort_by(|a, b| a.pos.cmp(&b.pos).then(a.end.cmp(&b.end)));
     }
-    fix_sets
-        .sort_by(|a, b| a[0].pos.cmp(&b[0].pos).then(a[a.len() - 1].end.cmp(&b[b.len() - 1].end)));
+    fix_sets.sort_by(|a, b| {
+        a[0].pos
+            .cmp(&b[0].pos)
+            .then(a[a.len() - 1].end.cmp(&b[b.len() - 1].end))
+    });
     let mut out = String::with_capacity(code.len());
     let mut last = 0usize;
     let mut fixed = false;

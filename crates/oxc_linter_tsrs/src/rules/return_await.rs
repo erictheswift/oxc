@@ -4,7 +4,7 @@ use tsrs_ast::{self as ast, Kind, ModifierFlags, Node, NodeFlags};
 use tsrs_core::P;
 
 use crate::rule::{Ctx, Listener, Rule, RuleFix, RuleMessage, RuleVisitor};
-use crate::utils::{self, TypeAwaitable};
+use crate::utils::{self, pos_i32, pos_u32, TypeAwaitable};
 
 fn disallowed_promise_await() -> RuleMessage {
     RuleMessage::new(
@@ -126,7 +126,10 @@ impl Rule for ReturnAwait {
         "return-await"
     }
     fn create_visitor(&'static self, _ctx: &mut Ctx) -> Box<dyn RuleVisitor> {
-        Box::new(Visitor { mode: self.mode, scopes: Vec::new() })
+        Box::new(Visitor {
+            mode: self.mode,
+            scopes: Vec::new(),
+        })
     }
 }
 
@@ -206,7 +209,9 @@ impl Visitor {
                 locals.for_each(|_, local| {
                     if let Some(decl) = local.value_declaration() {
                         if ast::is_variable_declaration(decl)
-                            && decl.parent().is_some_and(|p| p.flags().intersects(NodeFlags::Using))
+                            && decl
+                                .parent()
+                                .is_some_and(|p| p.flags().intersects(NodeFlags::Using))
                             && decl.pos() < node.pos()
                         {
                             found = true;
@@ -229,17 +234,24 @@ impl Visitor {
         if is_high_precedence {
             return vec![ctx.fix_insert_before(node, "await ")];
         }
-        vec![ctx.fix_insert_before(node, "await ("), ctx.fix_insert_after(node, ")")]
+        vec![
+            ctx.fix_insert_before(node, "await ("),
+            ctx.fix_insert_after(node, ")"),
+        ]
     }
 
     fn remove_await_fix(ctx: &Ctx, node: P<Node>) -> RuleFix {
-        let r = tsrs_scanner::get_range_of_token_at_position(ctx.file, node.pos());
-        ctx.fix_remove_range(r.pos(), r.end())
+        let r = tsrs_scanner::get_range_of_token_at_position(ctx.file, pos_u32(node.pos()));
+        ctx.fix_remove_range(pos_i32(r.pos()), pos_i32(r.end()))
     }
 
     fn test(&self, ctx: &mut Ctx, node: P<Node>) {
         let is_await = ast::is_await_expression(node);
-        let child = if is_await { node.expression().unwrap() } else { node };
+        let child = if is_await {
+            node.expression().unwrap()
+        } else {
+            node
+        };
         let t = ctx.checker.get_type_at_location(child);
         let certainty = utils::needs_to_be_awaited(ctx.checker, node, t);
         if certainty != TypeAwaitable::Always {

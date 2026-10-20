@@ -5,7 +5,7 @@ use tsrs_ast::{self as ast, FunctionFlags, Kind, Node, NodeFlags};
 use tsrs_checker::{Checker, Type, TypeFlags};
 use tsrs_core::P;
 
-use crate::rule::{Ctx, Listener, Rule, RuleMessage, RuleVisitor, opt_bool, options_object};
+use crate::rule::{opt_bool, options_object, Ctx, Listener, Rule, RuleMessage, RuleVisitor};
 use crate::utils;
 
 fn build_missing_return_value_message(function_name_with_kind: &str) -> RuleMessage {
@@ -56,7 +56,10 @@ impl Rule for ConsistentReturn {
         "consistent-return"
     }
     fn create_visitor(&'static self, _ctx: &mut Ctx) -> Box<dyn RuleVisitor> {
-        Box::new(Visitor { rule: self, stack: Vec::new() })
+        Box::new(Visitor {
+            rule: self,
+            stack: Vec::new(),
+        })
     }
 }
 
@@ -150,7 +153,9 @@ fn is_return_void_or_thenable_void(ctx: &mut Ctx, function_node: P<Node>) -> boo
                 &mut FxHashSet::default(),
             );
         }
-        utils::union_type_parts(return_type).into_iter().any(utils::is_intrinsic_void_type)
+        utils::union_type_parts(return_type)
+            .into_iter()
+            .any(utils::is_intrinsic_void_type)
     })
 }
 

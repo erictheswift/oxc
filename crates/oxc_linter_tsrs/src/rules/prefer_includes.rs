@@ -4,7 +4,7 @@ use tsrs_ast::{self as ast, Kind, Node, Symbol};
 use tsrs_core::P;
 
 use crate::rule::{Ctx, Listener, Rule, RuleFix, RuleMessage, RuleVisitor};
-use crate::utils;
+use crate::utils::{self, pos_i32, pos_u32};
 
 fn build_prefer_includes_message() -> RuleMessage {
     RuleMessage::new("preferIncludes", "Use 'includes()' method instead.")
@@ -23,8 +23,10 @@ pub fn create(_options: Option<&serde_json::Value>) -> Result<Box<dyn Rule>, Str
     Ok(Box::new(PreferIncludes))
 }
 
-const LISTENERS: &[Listener] =
-    &[Listener::Enter(Kind::CallExpression), Listener::Enter(Kind::BinaryExpression)];
+const LISTENERS: &[Listener] = &[
+    Listener::Enter(Kind::CallExpression),
+    Listener::Enter(Kind::BinaryExpression),
+];
 
 impl Rule for PreferIncludes {
     fn name(&self) -> &'static str {
@@ -59,7 +61,10 @@ fn is_simple_literal_pattern(pattern: &str) -> bool {
             }
         } else {
             // Escaped sequences that are regex metacharacters (not simple literals)
-            if matches!(ch, 'd' | 'D' | 'w' | 'W' | 's' | 'S' | 'b' | 'B' | 'c' | 'x' | 'u') {
+            if matches!(
+                ch,
+                'd' | 'D' | 'w' | 'W' | 's' | 'S' | 'b' | 'B' | 'c' | 'x' | 'u'
+            ) {
                 return false;
             }
         }
@@ -95,7 +100,11 @@ fn extract_regex_literal_pattern(node: P<Node>) -> Option<&'static str> {
 }
 
 fn non_empty(s: &'static str) -> Option<&'static str> {
-    if s.is_empty() { None } else { Some(s) }
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
 }
 
 // Extract pattern from RegExp constructor: new RegExp('bar') -> "bar"
@@ -155,13 +164,14 @@ fn has_same_parameters(decl_a: P<Node>, decl_b: P<Node>) -> bool {
         return false;
     }
     for (&param_a, &param_b) in params_a.iter().zip(params_b) {
-        let (Some(sf_a), Some(sf_b)) =
-            (ast::get_source_file_of_node(param_a), ast::get_source_file_of_node(param_b))
-        else {
+        let (Some(sf_a), Some(sf_b)) = (
+            ast::get_source_file_of_node(param_a),
+            ast::get_source_file_of_node(param_b),
+        ) else {
             return false;
         };
-        let text_a = &sf_a.text()[param_a.pos() as usize..param_a.end() as usize];
-        let text_b = &sf_b.text()[param_b.pos() as usize..param_b.end() as usize];
+        let text_a = &sf_a.text()[pos_u32(param_a.pos()) as usize..pos_u32(param_a.end()) as usize];
+        let text_b = &sf_b.text()[pos_u32(param_b.pos()) as usize..pos_u32(param_b.end()) as usize];
         if text_a != text_b {
             return false;
         }
@@ -285,16 +295,24 @@ impl Visitor {
         );
         let (call_pos, call_end) = ctx.trim(node);
         let mut fixes: Vec<RuleFix> = Vec::new();
-        fixes.push(ctx.fix_remove_range(call_pos, argument.pos()));
-        fixes.push(ctx.fix_remove_range(argument.end(), call_end));
+        fixes.push(ctx.fix_remove_range(call_pos, pos_i32(argument.pos())));
+        fixes.push(ctx.fix_remove_range(pos_i32(argument.end()), call_end));
         if needs_parens {
-            fixes.push(ctx.fix_replace_range(argument.pos(), argument.pos(), "("));
-            fixes.push(ctx.fix_replace_range(argument.end(), argument.end(), ")"));
+            fixes.push(ctx.fix_replace_range(
+                pos_i32(argument.pos()),
+                pos_i32(argument.pos()),
+                "(",
+            ));
+            fixes.push(ctx.fix_replace_range(
+                pos_i32(argument.end()),
+                pos_i32(argument.end()),
+                ")",
+            ));
         }
         let escaped_pattern = escape_string(pattern);
         fixes.push(ctx.fix_replace_range(
-            argument.end(),
-            argument.end(),
+            pos_i32(argument.end()),
+            pos_i32(argument.end()),
             format!(".includes('{escaped_pattern}')"),
         ));
         ctx.report_node_with_fixes(node, build_prefer_string_includes_message(), |_| fixes);
@@ -327,7 +345,7 @@ impl Visitor {
         }
         let mut fixes: Vec<RuleFix> = Vec::new();
         fixes.push(ctx.fix_replace(name_node, "includes"));
-        fixes.push(ctx.fix_remove_range(left.end(), node.end()));
+        fixes.push(ctx.fix_remove_range(pos_i32(left.end()), pos_i32(node.end())));
         if is_negative {
             let (call_pos, _) = ctx.trim(left);
             fixes.push(ctx.fix_replace_range(call_pos, call_pos, "!"));

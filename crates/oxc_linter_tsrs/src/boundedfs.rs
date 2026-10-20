@@ -8,7 +8,7 @@
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::SystemTime;
 
-use tsrs_vfs::{Entries, FS, FileInfo};
+use tsrs_vfs::{Entries, FileInfo, FS};
 
 pub struct BoundedReadsFS {
     inner: Arc<dyn FS>,
@@ -19,7 +19,11 @@ pub struct BoundedReadsFS {
 impl BoundedReadsFS {
     pub fn new(inner: Arc<dyn FS>, readers: usize) -> BoundedReadsFS {
         assert!(readers > 0);
-        BoundedReadsFS { inner, free: Mutex::new(readers), freed: Condvar::new() }
+        BoundedReadsFS {
+            inner,
+            free: Mutex::new(readers),
+            freed: Condvar::new(),
+        }
     }
 }
 

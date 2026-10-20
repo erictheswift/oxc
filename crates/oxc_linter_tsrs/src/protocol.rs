@@ -52,13 +52,17 @@ pub fn deserialize_payload(data: &[u8]) -> Result<Payload, String> {
         #[serde(default)]
         version: i32,
     }
-    let version = serde_json::from_slice::<VersionCheck>(data).map_err(|e| e.to_string())?.version;
+    let version = serde_json::from_slice::<VersionCheck>(data)
+        .map_err(|e| e.to_string())?
+        .version;
     if version == 2 {
         return serde_json::from_slice::<Payload>(data)
             .map_err(|e| format!("failed to deserialize V2 payload: {e}"));
     }
     if version != 0 {
-        return Err(format!("unsupported version `{version}`: expected `unset` or `2`"));
+        return Err(format!(
+            "unsupported version `{version}`: expected `unset` or `2`"
+        ));
     }
     let v1: PayloadV1 = serde_json::from_slice(data)
         .map_err(|e| format!("failed to deserialize V1 payload: {e}"))?;
@@ -75,7 +79,10 @@ pub fn deserialize_payload(data: &[u8]) -> Result<Payload, String> {
                 rules: f
                     .rules
                     .into_iter()
-                    .map(|name| HeadlessRule { name, options: None })
+                    .map(|name| HeadlessRule {
+                        name,
+                        options: None,
+                    })
                     .collect(),
             })
             .collect(),
@@ -99,6 +106,15 @@ pub enum MessageType {
 pub struct Range {
     pub pos: i32,
     pub end: i32,
+}
+
+impl From<tsrs_core::TextRange> for Range {
+    fn from(r: tsrs_core::TextRange) -> Range {
+        Range {
+            pos: crate::utils::pos_i32(r.pos()),
+            end: crate::utils::pos_i32(r.end()),
+        }
+    }
 }
 
 #[derive(Serialize, Clone, Debug)]

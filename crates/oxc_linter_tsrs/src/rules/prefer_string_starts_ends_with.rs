@@ -5,11 +5,14 @@ use std::fmt::Write;
 use tsrs_ast::{self as ast, Kind, Node};
 use tsrs_core::P;
 
-use crate::rule::{Ctx, Listener, Rule, RuleFix, RuleMessage, RuleVisitor, options_object};
-use crate::utils;
+use crate::rule::{options_object, Ctx, Listener, Rule, RuleFix, RuleMessage, RuleVisitor};
+use crate::utils::{self, pos_i32, pos_u32};
 
 fn build_prefer_starts_with_message() -> RuleMessage {
-    RuleMessage::new("preferStartsWith", "Use 'String#startsWith' method instead.")
+    RuleMessage::new(
+        "preferStartsWith",
+        "Use 'String#startsWith' method instead.",
+    )
 }
 
 fn build_prefer_ends_with_message() -> RuleMessage {
@@ -41,14 +44,18 @@ pub fn create(options: Option<&serde_json::Value>) -> Result<Box<dyn Rule>, Stri
         Some(v) => {
             return Err(format!(
                 "prefer-string-starts-ends-with: invalid value (expected one of \"always\", \"never\"): {v}"
-            ));
+            ))
         }
     };
-    Ok(Box::new(PreferStringStartsEndsWith { allow_single_element_equality_always: always }))
+    Ok(Box::new(PreferStringStartsEndsWith {
+        allow_single_element_equality_always: always,
+    }))
 }
 
-const LISTENERS: &[Listener] =
-    &[Listener::Enter(Kind::BinaryExpression), Listener::Enter(Kind::CallExpression)];
+const LISTENERS: &[Listener] = &[
+    Listener::Enter(Kind::BinaryExpression),
+    Listener::Enter(Kind::CallExpression),
+];
 
 impl Rule for PreferStringStartsEndsWith {
     fn name(&self) -> &'static str {
@@ -112,9 +119,13 @@ fn go_strconv_quote(s: &str) -> String {
     out
 }
 
-/// Go unicode.IsDigit (Unicode decimal digits). Non-ASCII runes are approximated with char::is_numeric.
+/// Go unicode.IsDigit (category Nd). Non-ASCII runes are approximated with char::is_numeric.
 fn go_is_digit(ch: char) -> bool {
-    if ch.is_ascii() { ch.is_ascii_digit() } else { ch.is_numeric() }
+    if ch.is_ascii() {
+        ch.is_ascii_digit()
+    } else {
+        ch.is_numeric()
+    }
 }
 
 fn utf16_len(s: &str) -> usize {
@@ -157,7 +168,11 @@ fn member_optional(node: P<Node>) -> bool {
 }
 
 fn member_optional_operator(node: P<Node>) -> &'static str {
-    if member_optional(node) { "?." } else { "." }
+    if member_optional(node) {
+        "?."
+    } else {
+        "."
+    }
 }
 
 fn get_property_name(node: P<Node>) -> Option<&'static str> {
@@ -185,7 +200,12 @@ fn static_number(node: P<Node>) -> Option<f64> {
     let node = ast::skip_parentheses(node);
     if ast::is_numeric_literal(node) {
         // strconv.ParseFloat fails (instead of returning an infinity) on overflow.
-        return node.text().replace('_', "").parse::<f64>().ok().filter(|n| n.is_finite());
+        return node
+            .text()
+            .replace('_', "")
+            .parse::<f64>()
+            .ok()
+            .filter(|n| n.is_finite());
     }
     if ast::is_prefix_unary_expression(node) {
         let prefix = node.as_prefix_unary_expression();
@@ -229,7 +249,11 @@ fn parse_reg_exp_text(pattern: &str) -> Option<String> {
     if is_starts_with == is_ends_with {
         return None;
     }
-    let content = if is_starts_with { &pattern[1..] } else { &pattern[..pattern.len() - 1] };
+    let content = if is_starts_with {
+        &pattern[1..]
+    } else {
+        &pattern[..pattern.len() - 1]
+    };
     let mut builder = String::new();
     let mut escaped = false;
     for ch in content.chars() {
@@ -259,7 +283,7 @@ fn parse_reg_exp_text(pattern: &str) -> Option<String> {
         }
         match ch {
             '.' | '*' | '+' | '?' | '|' | '^' | '$' | '[' | ']' | '(' | ')' | '{' | '}' => {
-                return None;
+                return None
             }
             _ => builder.push(ch),
         }
@@ -273,7 +297,10 @@ fn parse_reg_exp_text(pattern: &str) -> Option<String> {
 impl Visitor {
     fn normalized_node_text(&self, ctx: &Ctx, node: P<Node>) -> String {
         let (pos, end) = ctx.trim(ast::skip_parentheses(node));
-        ctx.text()[pos as usize..end as usize].chars().filter(|c| !c.is_whitespace()).collect()
+        ctx.text()[pos as usize..end as usize]
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect()
     }
 
     fn is_same_tokens(&self, ctx: &Ctx, node1: P<Node>, node2: P<Node>) -> bool {
@@ -284,13 +311,15 @@ impl Visitor {
         let Some(obj) = member_object(node) else {
             return ctx.trim(node);
         };
-        let start = tsrs_scanner::get_range_of_token_at_position(ctx.file, obj.end());
+        let start = tsrs_scanner::get_range_of_token_at_position(ctx.file, pos_u32(obj.end()));
         let (_, member_end) = ctx.trim(node);
-        (start.pos(), member_end)
+        (pos_i32(start.pos()), member_end)
     }
 
     fn is_string_type(&self, ctx: &mut Ctx, node: P<Node>) -> bool {
-        let t = ctx.checker.get_type_at_location(ast::skip_parentheses(node));
+        let t = ctx
+            .checker
+            .get_type_at_location(ast::skip_parentheses(node));
         utils::get_type_name(ctx.checker, t) == "string"
     }
 
@@ -312,7 +341,8 @@ impl Visitor {
     }
 
     fn is_character(&self, ctx: &mut Ctx, node: P<Node>) -> bool {
-        self.static_string(ctx, node).is_some_and(|v| utf16_len(v) == 1)
+        self.static_string(ctx, node)
+            .is_some_and(|v| utf16_len(v) == 1)
     }
 
     fn get_nullish_kind(&self, ctx: &mut Ctx, node: P<Node>) -> NullishKind {
@@ -443,7 +473,10 @@ impl Visitor {
             return None;
         }
         let text = parse_reg_exp_text(pattern)?;
-        Some(ParsedRegExp { is_starts_with, text })
+        Some(ParsedRegExp {
+            is_starts_with,
+            text,
+        })
     }
 
     fn fix_with_right_operand(

@@ -4,8 +4,8 @@ use tsrs_ast::{self as ast, Kind, Node, SourceFile, Symbol};
 use tsrs_core::P;
 
 use crate::rule::{
-    Ctx, LabeledRange, Listener, Rule, RuleDiagnostic, RuleMessage, RuleVisitor, opt_bool,
-    options_object,
+    opt_bool, options_object, Ctx, LabeledRange, Listener, Rule, RuleDiagnostic, RuleMessage,
+    RuleVisitor,
 };
 use crate::utils;
 
@@ -39,7 +39,12 @@ fn build_unbound_diagnostic(
             end: dend,
         });
     }
-    RuleDiagnostic { pos, end, message, labeled_ranges }
+    RuleDiagnostic {
+        pos,
+        end,
+        message,
+        labeled_ranges,
+    }
 }
 
 fn is_node_inside_type_declaration(node: P<Node>) -> bool {
@@ -56,7 +61,7 @@ fn is_node_inside_type_declaration(node: P<Node>) -> bool {
                 return true;
             }
             Kind::FunctionType | Kind::InterfaceDeclaration | Kind::TypeAliasDeclaration => {
-                return true;
+                return true
             }
             Kind::VariableStatement if utils::includes_modifier(p, Kind::DeclareKeyword) => {
                 return true;
@@ -96,10 +101,10 @@ fn is_safe_use(mut node: P<Node>) -> bool {
             }
             Kind::CallExpression => return parent.expression() == Some(node),
             Kind::ConditionalExpression => {
-                return parent.as_conditional_expression().condition == node;
+                return parent.as_conditional_expression().condition == node
             }
             Kind::TaggedTemplateExpression => {
-                return parent.as_tagged_template_expression().tag == node;
+                return parent.as_tagged_template_expression().tag == node
             }
             Kind::DeleteExpression | Kind::TypeOfExpression | Kind::VoidExpression => return true,
             Kind::BinaryExpression => {
@@ -135,7 +140,7 @@ fn is_safe_use(mut node: P<Node>) -> bool {
                 return false;
             }
             Kind::NonNullExpression | Kind::AsExpression | Kind::TypeAssertionExpression => {
-                continue;
+                continue
             }
             _ => {}
         }
@@ -172,9 +177,13 @@ fn check_method(value_declaration: P<Node>, ignore_static: bool) -> (bool, bool)
     let params = value_declaration.parameters();
     let first_param_is_this = !params.is_empty()
         && ast::is_parameter_declaration(params[0])
-        && params[0].name().is_some_and(|n| ast::is_identifier(n) && n.text() == "this");
-    let this_arg_is_void =
-        first_param_is_this && params[0].type_node().is_some_and(|t| t.kind() == Kind::VoidKeyword);
+        && params[0]
+            .name()
+            .is_some_and(|n| ast::is_identifier(n) && n.text() == "this");
+    let this_arg_is_void = first_param_is_this
+        && params[0]
+            .type_node()
+            .is_some_and(|t| t.kind() == Kind::VoidKeyword);
     let dangerous = !this_arg_is_void
         && (!ignore_static || !utils::includes_modifier(value_declaration, Kind::StaticKeyword));
     (dangerous, first_param_is_this)
@@ -366,7 +375,9 @@ pub struct UnboundMethod {
 
 pub fn create(options: Option<&serde_json::Value>) -> Result<Box<dyn Rule>, String> {
     let m = options_object(options);
-    Ok(Box::new(UnboundMethod { ignore_static: opt_bool(&m, "ignoreStatic", false) }))
+    Ok(Box::new(UnboundMethod {
+        ignore_static: opt_bool(&m, "ignoreStatic", false),
+    }))
 }
 
 const LISTENERS: &[Listener] = &[
@@ -536,8 +547,10 @@ impl RuleVisitor for Visitor {
                         continue;
                     }
                     let binding_elem = property.as_binding_element();
-                    let property_name =
-                        binding_elem.property_name().or_else(|| binding_elem.name()).unwrap();
+                    let property_name = binding_elem
+                        .property_name()
+                        .or_else(|| binding_elem.name())
+                        .unwrap();
                     if binding_elem.dot_dot_dot_token().is_some()
                         || !ast::is_identifier(property_name)
                     {

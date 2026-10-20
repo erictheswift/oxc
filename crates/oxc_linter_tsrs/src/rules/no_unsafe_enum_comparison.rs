@@ -3,7 +3,7 @@
 use rustc_hash::FxHashSet;
 use tsrs_ast::{self as ast, Kind, Node, SourceFile, Symbol, SymbolFlags};
 use tsrs_checker::{Checker, LiteralValue, Type, TypeFlags};
-use tsrs_core::{LanguageVariant, P, jsnum};
+use tsrs_core::{jsnum, LanguageVariant, P};
 
 use crate::rule::{
     Ctx, LabeledRange, Listener, Rule, RuleDiagnostic, RuleMessage, RuleSuggestion, RuleVisitor,
@@ -32,7 +32,11 @@ fn build_operand_range(
     type_text: &str,
 ) -> LabeledRange {
     let (pos, end) = utils::trim_node_text_range(source_file, node);
-    LabeledRange { label: format!("{label}: {type_text}"), pos, end }
+    LabeledRange {
+        label: format!("{label}: {type_text}"),
+        pos,
+        end,
+    }
 }
 
 #[expect(
@@ -162,7 +166,11 @@ impl StaticValue {
         }
     }
     fn number(n: jsnum::Number) -> StaticValue {
-        StaticValue { kind: StaticValueKind::Number, string_value: String::new(), number_value: n }
+        StaticValue {
+            kind: StaticValueKind::Number,
+            string_value: String::new(),
+            number_value: n,
+        }
     }
 }
 
@@ -201,7 +209,9 @@ fn get_static_value(node: P<Node>) -> Option<StaticValue> {
                     static_value_to_string(&left) + &static_value_to_string(&right),
                 ));
             }
-            Some(StaticValue::number(jsnum::Number(left.number_value.0 + right.number_value.0)))
+            Some(StaticValue::number(jsnum::Number(
+                left.number_value.0 + right.number_value.0,
+            )))
         }
         _ => None,
     }
@@ -217,7 +227,10 @@ fn static_value_to_string(value: &StaticValue) -> String {
 // ---- suggestion.go ----
 
 fn build_replace_value_with_enum_message() -> RuleMessage {
-    RuleMessage::new("replaceValueWithEnum", "Replace with an enum value comparison.")
+    RuleMessage::new(
+        "replaceValueWithEnum",
+        "Replace with an enum value comparison.",
+    )
 }
 
 fn enum_value_matches_static_value(enum_value: Option<LiteralValue>, value: &StaticValue) -> bool {
@@ -254,7 +267,9 @@ fn enum_member_suffix_text(source_file: P<SourceFile>, member: P<Node>) -> Strin
 }
 
 fn is_qualified_identifier_text(value: &str) -> bool {
-    value.split('.').all(|part| tsrs_scanner::is_identifier_text(part, LanguageVariant::Standard))
+    value
+        .split('.')
+        .all(|part| tsrs_scanner::is_identifier_text(part, LanguageVariant::Standard))
 }
 
 fn symbol_matches_enum(
@@ -365,7 +380,9 @@ fn enum_qualifier_from_member_access(
 ) -> String {
     let node = ast::skip_parentheses(node);
     if ast::is_property_access_expression(node) {
-        let symbol = ctx.checker.get_symbol_at_location_exported(node.name().unwrap());
+        let symbol = ctx
+            .checker
+            .get_symbol_at_location_exported(node.name().unwrap());
         if !symbol_matches_enum_declaration(ctx.checker, symbol, enum_declaration) {
             return String::new();
         }
@@ -436,8 +453,10 @@ pub fn create(_options: Option<&serde_json::Value>) -> Result<Box<dyn Rule>, Str
     Ok(Box::new(NoUnsafeEnumComparison))
 }
 
-const LISTENERS: &[Listener] =
-    &[Listener::Enter(Kind::BinaryExpression), Listener::Enter(Kind::CaseClause)];
+const LISTENERS: &[Listener] = &[
+    Listener::Enter(Kind::BinaryExpression),
+    Listener::Enter(Kind::CaseClause),
+];
 
 impl Rule for NoUnsafeEnumComparison {
     fn name(&self) -> &'static str {
@@ -494,8 +513,13 @@ impl RuleVisitor for Visitor {
                 }
             }
             Kind::CaseClause => {
-                let switch_expression =
-                    node.parent().unwrap().parent().unwrap().expression().unwrap();
+                let switch_expression = node
+                    .parent()
+                    .unwrap()
+                    .parent()
+                    .unwrap()
+                    .expression()
+                    .unwrap();
                 let case_expression = node.expression().unwrap();
                 let left_type = ctx.checker.get_type_at_location(switch_expression);
                 let right_type = ctx.checker.get_type_at_location(case_expression);

@@ -2674,7 +2674,10 @@ pub(super) const UNICODE_SUPPORTED_PROPERTY_ALIASES: &[(&str, &str)] = &[
 pub(super) const UNICODE_BARE_PROPERTY_VALUE_ALIASES: &[(&str, &str)] = &[
     ("extendnumlet", "Word_Break=ExtendNumLet"),
     ("hebrewletter", "Word_Break=Hebrew_Letter"),
-    ("regionalindicator", "Grapheme_Cluster_Break=Regional_Indicator"),
+    (
+        "regionalindicator",
+        "Grapheme_Cluster_Break=Regional_Indicator",
+    ),
     ("ri", "Grapheme_Cluster_Break=Regional_Indicator"),
     ("wsegspace", "Word_Break=WSegSpace"),
 ];
@@ -2692,7 +2695,11 @@ pub(super) const UNICODE_SUPPORTED_PROPERTY_VALUE_ALIASES: &[(&str, &str, &str)]
     ("Grapheme_Cluster_Break", "lvt", "LVT"),
     ("Grapheme_Cluster_Break", "pp", "Prepend"),
     ("Grapheme_Cluster_Break", "prepend", "Prepend"),
-    ("Grapheme_Cluster_Break", "regionalindicator", "Regional_Indicator"),
+    (
+        "Grapheme_Cluster_Break",
+        "regionalindicator",
+        "Regional_Indicator",
+    ),
     ("Grapheme_Cluster_Break", "ri", "Regional_Indicator"),
     ("Grapheme_Cluster_Break", "sm", "SpacingMark"),
     ("Grapheme_Cluster_Break", "spacingmark", "SpacingMark"),

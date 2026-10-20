@@ -7,9 +7,9 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
+use tsrs_core::tspath::{self, Path};
 use tsrs_core::CompilerOptions;
 use tsrs_core::P;
-use tsrs_core::tspath::{self, Path};
 use tsrs_tsoptions::{
     self as tsoptions, ExtendedConfigCacheEntry, ParseConfigHost, ParsedCommandLine,
 };
@@ -87,7 +87,11 @@ impl TsConfigResolver {
     }
 
     fn to_path(&self, file_name: &str) -> Path {
-        tspath::to_path(file_name, &self.host.cwd, self.fs().use_case_sensitive_file_names())
+        tspath::to_path(
+            file_name,
+            &self.host.cwd,
+            self.fs().use_case_sensitive_file_names(),
+        )
     }
 
     /// configfileregistrybuilder.go ComputeConfigFileName (no custom config file name).
@@ -149,7 +153,10 @@ impl TsConfigResolver {
                 }
             }
         };
-        self.directory_configs.lock().unwrap().insert(directory.to_string(), config.clone());
+        self.directory_configs
+            .lock()
+            .unwrap()
+            .insert(directory.to_string(), config.clone());
         config
     }
 
@@ -158,7 +165,11 @@ impl TsConfigResolver {
     /// directory tree.
     pub fn load(&self, config_file_name: &str) -> Arc<ParsedConfig> {
         let cell = Arc::clone(
-            self.configs.lock().unwrap().entry(config_file_name.to_string()).or_default(),
+            self.configs
+                .lock()
+                .unwrap()
+                .entry(config_file_name.to_string())
+                .or_default(),
         );
         Arc::clone(cell.get_or_init(|| {
             let (parsed, errors) = config_pool().install(|| {
@@ -173,7 +184,10 @@ impl TsConfigResolver {
                     Some(self.ext_cache),
                 )
             });
-            Arc::new(ParsedConfig { config: parsed.map(P::new), errors })
+            Arc::new(ParsedConfig {
+                config: parsed.map(P::new),
+                errors,
+            })
         }))
     }
 
@@ -242,10 +256,15 @@ impl TsConfigResolver {
     /// is memoized, and once the configs are parsed, assigning a file is a few map lookups, which on many threads
     /// mostly contend on the caches' locks.
     pub fn resolve_all(&self, files: &[String]) -> Vec<String> {
-        let nearest: Vec<String> =
-            files.iter().map(|f| self.compute_config_file_name(f, false)).collect();
-        let mut configs: Vec<&str> =
-            nearest.iter().filter(|c| !c.is_empty()).map(String::as_str).collect();
+        let nearest: Vec<String> = files
+            .iter()
+            .map(|f| self.compute_config_file_name(f, false))
+            .collect();
+        let mut configs: Vec<&str> = nearest
+            .iter()
+            .filter(|c| !c.is_empty())
+            .map(String::as_str)
+            .collect();
         configs.sort_unstable();
         configs.dedup();
         config_pool().install(|| {
@@ -253,7 +272,11 @@ impl TsConfigResolver {
                 self.load(c);
             })
         });
-        files.iter().zip(&nearest).map(|(file, config)| self.resolve_from(file, config)).collect()
+        files
+            .iter()
+            .zip(&nearest)
+            .map(|(file, config)| self.resolve_from(file, config))
+            .collect()
     }
 }
 
@@ -264,6 +287,9 @@ fn config_pool() -> &'static rayon::ThreadPool {
     static POOL: OnceLock<rayon::ThreadPool> = OnceLock::new();
     POOL.get_or_init(|| {
         let threads = std::thread::available_parallelism().map_or(4, |n| n.get().min(4));
-        rayon::ThreadPoolBuilder::new().num_threads(threads).build().unwrap()
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build()
+            .unwrap()
     })
 }

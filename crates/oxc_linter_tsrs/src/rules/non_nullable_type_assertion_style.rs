@@ -6,7 +6,7 @@ use tsrs_checker::{Checker, Type, TypeFlags};
 use tsrs_core::P;
 
 use crate::rule::{Ctx, Listener, Rule, RuleMessage, RuleSuggestion, RuleVisitor};
-use crate::utils;
+use crate::utils::{self, pos_i32};
 
 fn build_prefer_non_null_assertion_message() -> RuleMessage {
     RuleMessage::new(
@@ -21,8 +21,10 @@ pub fn create(_options: Option<&serde_json::Value>) -> Result<Box<dyn Rule>, Str
     Ok(Box::new(NonNullableTypeAssertionStyle))
 }
 
-const LISTENERS: &[Listener] =
-    &[Listener::Enter(Kind::AsExpression), Listener::Enter(Kind::TypeAssertionExpression)];
+const LISTENERS: &[Listener] = &[
+    Listener::Enter(Kind::AsExpression),
+    Listener::Enter(Kind::TypeAssertionExpression),
+];
 
 impl Rule for NonNullableTypeAssertionStyle {
     fn name(&self) -> &'static str {
@@ -50,7 +52,9 @@ fn could_be_nullable(c: &mut Checker, mut t: P<Type>) -> bool {
             None => return true,
         }
     }
-    utils::union_type_parts(t).into_iter().any(|p| utils::is_type_flag_set(p, TypeFlags::Nullable))
+    utils::union_type_parts(t)
+        .into_iter()
+        .any(|p| utils::is_type_flag_set(p, TypeFlags::Nullable))
 }
 
 impl RuleVisitor for Visitor {
@@ -87,7 +91,10 @@ impl RuleVisitor for Visitor {
             }
             asserted_types_set.insert(t);
         }
-        if non_nullable_original_type.iter().any(|t| !asserted_types_set.contains(t)) {
+        if non_nullable_original_type
+            .iter()
+            .any(|t| !asserted_types_set.contains(t))
+        {
             return;
         }
 
@@ -98,7 +105,7 @@ impl RuleVisitor for Visitor {
         } else {
             (node.pos(), expression.pos())
         };
-        let mut fixes = vec![ctx.fix_remove_range(remove_pos, remove_end)];
+        let mut fixes = vec![ctx.fix_remove_range(pos_i32(remove_pos), pos_i32(remove_end))];
         if higher_precedence_than_unary {
             fixes.push(ctx.fix_insert_after(expression, "!"));
         } else {
@@ -106,7 +113,10 @@ impl RuleVisitor for Visitor {
             fixes.push(ctx.fix_insert_after(expression, ")!"));
         }
         ctx.report_node_with_suggestions(node, build_prefer_non_null_assertion_message(), |_| {
-            vec![RuleSuggestion { message: build_prefer_non_null_assertion_message(), fixes }]
+            vec![RuleSuggestion {
+                message: build_prefer_non_null_assertion_message(),
+                fixes,
+            }]
         });
     }
 }

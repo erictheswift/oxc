@@ -82,7 +82,11 @@ fn is_flaggable_handler_type(ctx: &mut Ctx, t: P<Type>) -> bool {
             let mut first_param_type = ctx.checker.get_type_of_symbol(first_param);
             let decl = first_param.value_declaration();
             if let Some(decl) = decl {
-                if decl.as_parameter_declaration().dot_dot_dot_token().is_some() {
+                if decl
+                    .as_parameter_declaration()
+                    .dot_dot_dot_token()
+                    .is_some()
+                {
                     // a rest arg that's not an array or tuple should definitely be flagged.
                     if !ctx.checker.is_array_or_tuple_type(first_param_type) {
                         return true;
@@ -143,7 +147,7 @@ impl RuleVisitor for Visitor {
         if !found {
             return;
         }
-        let (method, arg_index_to_check) = match property_name.as_str() {
+        let (method, arg_index_to_check) = match &*property_name {
             "catch" => ("`catch`", 0usize),
             "then" => ("`then` rejection", 1usize),
             _ => return,
@@ -160,7 +164,9 @@ impl RuleVisitor for Visitor {
                 break;
             }
         }
-        let callee_expr_type = ctx.checker.get_type_at_location(callee.expression().unwrap());
+        let callee_expr_type = ctx
+            .checker
+            .get_type_at_location(callee.expression().unwrap());
         if !utils::is_thenable_type(ctx.checker, callee, Some(callee_expr_type)) {
             return;
         }
@@ -179,9 +185,7 @@ impl RuleVisitor for Visitor {
                                 vec![RuleSuggestion {
                                     message:
                                         build_add_unknown_rest_type_annotation_suggestion_message(),
-                                    fixes: vec![
-                                        ctx.fix_insert_after(catch_variable, ": [unknown]"),
-                                    ],
+                                    fixes: vec![ctx.fix_insert_after(catch_variable, ": [unknown]")],
                                 }]
                             },
                         );

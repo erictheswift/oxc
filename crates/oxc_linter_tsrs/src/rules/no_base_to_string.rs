@@ -5,7 +5,7 @@ use tsrs_ast::{self as ast, Kind, Node};
 use tsrs_checker::{Type, TypeFlags};
 use tsrs_core::P;
 
-use crate::rule::{Ctx, Listener, Rule, RuleMessage, RuleVisitor, opt_bool, options_object};
+use crate::rule::{opt_bool, options_object, Ctx, Listener, Rule, RuleMessage, RuleVisitor};
 use crate::utils;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -61,10 +61,14 @@ pub struct NoBaseToString {
 pub fn create(options: Option<&serde_json::Value>) -> Result<Box<dyn Rule>, String> {
     let m = options_object(options);
     let ignored_type_names = match m.get("ignoredTypeNames") {
-        Some(serde_json::Value::Array(a)) => {
-            a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()
-        }
-        _ => ["Error", "RegExp", "URL", "URLSearchParams"].iter().map(|s| s.to_string()).collect(),
+        Some(serde_json::Value::Array(a)) => a
+            .iter()
+            .filter_map(|v| v.as_str().map(str::to_string))
+            .collect(),
+        _ => ["Error", "RegExp", "URL", "URLSearchParams"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
     };
     Ok(Box::new(NoBaseToString {
         check_unknown: opt_bool(&m, "checkUnknown", false),
@@ -404,7 +408,10 @@ impl RuleVisitor for Visitor {
                 }
             }
             Kind::TemplateExpression => {
-                if node.parent().is_some_and(ast::is_tagged_template_expression) {
+                if node
+                    .parent()
+                    .is_some_and(ast::is_tagged_template_expression)
+                {
                     return;
                 }
                 for &span in node.as_template_expression().template_spans().nodes() {

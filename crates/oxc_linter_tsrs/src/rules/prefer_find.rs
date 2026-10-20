@@ -8,14 +8,20 @@ use tsrs_checker::Type;
 use tsrs_core::P;
 
 use crate::rule::{Ctx, Listener, Rule, RuleFix, RuleMessage, RuleSuggestion, RuleVisitor};
-use crate::utils;
+use crate::utils::{self, pos_i32, pos_u32};
 
 fn build_prefer_find_message() -> RuleMessage {
-    RuleMessage::new("preferFind", "Prefer .find(...) instead of .filter(...)[0].")
+    RuleMessage::new(
+        "preferFind",
+        "Prefer .find(...) instead of .filter(...)[0].",
+    )
 }
 
 fn build_prefer_find_suggestion_message() -> RuleMessage {
-    RuleMessage::new("preferFindSuggestion", "Use .find(...) instead of .filter(...)[0].")
+    RuleMessage::new(
+        "preferFindSuggestion",
+        "Use .find(...) instead of .filter(...)[0].",
+    )
 }
 
 /// Minimal arbitrary-precision integer standing in for Go's math/big.Int (only the operations
@@ -106,7 +112,10 @@ impl BigInt {
     }
 
     fn neg(&self) -> BigInt {
-        BigInt { negative: !self.negative && !self.limbs.is_empty(), limbs: self.limbs.clone() }
+        BigInt {
+            negative: !self.negative && !self.limbs.is_empty(),
+            limbs: self.limbs.clone(),
+        }
     }
 
     fn sign(&self) -> i32 {
@@ -174,11 +183,11 @@ fn go_format_float_g_shortest(v: f64) -> String {
         return format!("{sign}{m}e{esign}{:02}", exp.abs());
     }
     let dp = exp + 1;
-    let n_digits = digits.len() as i32;
+    let nd = digits.len() as i32;
     let body = if dp <= 0 {
         format!("0.{}{}", "0".repeat((-dp) as usize), digits)
-    } else if dp >= n_digits {
-        format!("{}{}", digits, "0".repeat((dp - n_digits) as usize))
+    } else if dp >= nd {
+        format!("{}{}", digits, "0".repeat((dp - nd) as usize))
     } else {
         format!("{}.{}", &digits[..dp as usize], &digits[dp as usize..])
     };
@@ -328,10 +337,10 @@ fn get_static_value(
     let node = ast::skip_parentheses(node);
     match node.kind() {
         Kind::StringLiteral | Kind::NoSubstitutionTemplateLiteral => {
-            return Some(StaticValue::String(node.text()));
+            return Some(StaticValue::String(node.text()))
         }
         Kind::NumericLiteral => {
-            return go_parse_float(&node.text().replace('_', "")).map(StaticValue::Number);
+            return go_parse_float(&node.text().replace('_', "")).map(StaticValue::Number)
         }
         Kind::TrueKeyword => return Some(StaticValue::Boolean(true)),
         Kind::FalseKeyword => return Some(StaticValue::Boolean(false)),
@@ -373,7 +382,7 @@ fn get_static_value(
             }
         }
         Kind::AsExpression | Kind::TypeAssertionExpression | Kind::NonNullExpression => {
-            return get_static_value(ctx, node.expression().unwrap(), visited);
+            return get_static_value(ctx, node.expression().unwrap(), visited)
         }
         _ => {}
     }
@@ -524,7 +533,7 @@ fn find_array_element_access_start(
 ) -> Option<i32> {
     let (_, array_end) = ctx.trim(ast::skip_parentheses(array_node));
     let search_start = array_end as usize;
-    let search_end = whole_expression.end() as usize;
+    let search_end = pos_u32(whole_expression.end()) as usize;
     let text = ctx.text();
     let bytes = text.as_bytes();
     let mut i = search_start;
@@ -571,16 +580,22 @@ fn report_prefer_find(
     let Some(start) = find_array_element_access_start(ctx, array_node, node) else {
         return;
     };
-    let remove_fix = ctx.fix_remove_range(start, node.end());
+    let remove_fix = ctx.fix_remove_range(start, pos_i32(node.end()));
     ctx.report_node_with_suggestions(node, build_prefer_find_message(), |ctx| {
         let mut fixes: Vec<RuleFix> = Vec::with_capacity(filter_expressions.len() + 1);
         for filter_expression in filter_expressions {
-            let replacement =
-                if filter_expression.is_bracket_syntax_for_filter { "\"find\"" } else { "find" };
+            let replacement = if filter_expression.is_bracket_syntax_for_filter {
+                "\"find\""
+            } else {
+                "find"
+            };
             fixes.push(ctx.fix_replace(filter_expression.filter_node, replacement));
         }
         fixes.push(remove_fix);
-        vec![RuleSuggestion { message: build_prefer_find_suggestion_message(), fixes }]
+        vec![RuleSuggestion {
+            message: build_prefer_find_suggestion_message(),
+            fixes,
+        }]
     });
 }
 
@@ -590,8 +605,10 @@ pub fn create(_options: Option<&serde_json::Value>) -> Result<Box<dyn Rule>, Str
     Ok(Box::new(PreferFind))
 }
 
-const LISTENERS: &[Listener] =
-    &[Listener::Enter(Kind::CallExpression), Listener::Enter(Kind::ElementAccessExpression)];
+const LISTENERS: &[Listener] = &[
+    Listener::Enter(Kind::CallExpression),
+    Listener::Enter(Kind::ElementAccessExpression),
+];
 
 impl Rule for PreferFind {
     fn name(&self) -> &'static str {

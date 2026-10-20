@@ -15,10 +15,10 @@ use tsrs_checker::{
 use tsrs_core::P;
 
 use crate::rule::{
-    Ctx, Listener, Rule, RuleDiagnostic, RuleFix, RuleMessage, RuleVisitor, opt_bool,
-    options_object,
+    opt_bool, options_object, Ctx, Listener, Rule, RuleDiagnostic, RuleFix, RuleMessage,
+    RuleVisitor,
 };
-use crate::utils;
+use crate::utils::{self, pos_i32, pos_u32};
 
 const CONTEXTUALLY_UNNECESSARY: &str =
     "This assertion is unnecessary since the receiver accepts the original type of the expression.";
@@ -50,9 +50,10 @@ pub struct NoUnnecessaryTypeAssertion {
 pub fn create(options: Option<&serde_json::Value>) -> Result<Box<dyn Rule>, String> {
     let m = options_object(options);
     let types_to_ignore = match m.get("typesToIgnore") {
-        Some(serde_json::Value::Array(a)) => {
-            a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()
-        }
+        Some(serde_json::Value::Array(a)) => a
+            .iter()
+            .filter_map(|v| v.as_str().map(str::to_string))
+            .collect(),
         _ => Vec::new(),
     };
     Ok(Box::new(NoUnnecessaryTypeAssertion {
@@ -245,7 +246,13 @@ fn type_contains(
             .any(|&part| type_contains(c, Some(part), predicate, seen_types, active_signatures));
     }
     for &type_argument in get_type_arguments(c, t) {
-        if type_contains(c, Some(type_argument), predicate, seen_types, active_signatures) {
+        if type_contains(
+            c,
+            Some(type_argument),
+            predicate,
+            seen_types,
+            active_signatures,
+        ) {
             return true;
         }
     }
@@ -296,7 +303,9 @@ fn contains_type_variable(c: &mut Checker, t: P<Type>) -> bool {
 }
 
 fn has_index_signature(c: &mut Checker, t: P<Type>) -> bool {
-    utils::union_type_parts(t).into_iter().any(|part| !c.get_index_infos_of_type(part).is_empty())
+    utils::union_type_parts(t)
+        .into_iter()
+        .any(|part| !c.get_index_infos_of_type(part).is_empty())
 }
 
 fn has_same_properties(c: &mut Checker, uncast: P<Type>, cast: P<Type>) -> bool {
@@ -620,7 +629,9 @@ fn has_type_params(sig: P<Signature>) -> bool {
 }
 
 fn has_generic_call_signature(c: &mut Checker, t: P<Type>) -> bool {
-    utils::get_call_signatures(c, t).iter().any(|&s| has_type_params(s))
+    utils::get_call_signatures(c, t)
+        .iter()
+        .any(|&s| has_type_params(s))
 }
 
 fn is_rest_parameter_symbol(param: P<Symbol>) -> bool {
@@ -728,7 +739,9 @@ fn is_argument_to_overloaded_function(c: &mut Checker, node: P<Node>) -> bool {
     let first_param_type = param_types[0];
     if param_types.iter().any(|&p| p != first_param_type) {
         let uncast_type = c.get_type_at_location(node.expression().unwrap());
-        return param_types.iter().any(|&p| !c.is_type_assignable_to(uncast_type, p));
+        return param_types
+            .iter()
+            .any(|&p| !c.is_type_assignable_to(uncast_type, p));
     }
     false
 }
@@ -1016,7 +1029,10 @@ fn is_constrained_to(
         return is_constrained_to(c, constraint, target, seen);
     }
     if utils::is_intersection_type(source) {
-        return source.types().iter().any(|&part| is_constrained_to(c, Some(part), target, seen));
+        return source
+            .types()
+            .iter()
+            .any(|&part| is_constrained_to(c, Some(part), target, seen));
     }
     false
 }
@@ -1185,9 +1201,12 @@ fn check_type_assertion(ctx: &mut Ctx, opts: &NoUnnecessaryTypeAssertion, env: E
 }
 
 fn exclamation_token_range(ctx: &Ctx, node: P<Node>) -> (i32, i32) {
-    let s = tsrs_scanner::get_scanner_for_source_file(ctx.file, node.expression().unwrap().end());
+    let s = tsrs_scanner::get_scanner_for_source_file(
+        ctx.file,
+        pos_u32(node.expression().unwrap().end()),
+    );
     let r = s.token_range();
-    (r.pos(), r.end())
+    (pos_i32(r.pos()), pos_i32(r.end()))
 }
 
 fn check_non_null_expression(ctx: &mut Ctx, env: Env, node: P<Node>) {
@@ -1290,19 +1309,22 @@ fn js_doc_assertion_range(ctx: &Ctx, node: P<Node>) -> Option<(i32, i32)> {
     if !ast::is_in_js_file(node) || type_node.pos() >= expression.pos() {
         return None;
     }
-    let mut search_start = node.pos();
+    let mut search_start = pos_i32(node.pos());
     if let Some(parent) = node.parent() {
         if ast::is_parenthesized_expression(parent) {
-            search_start = parent.pos();
+            search_start = pos_i32(parent.pos());
         }
     }
-    let before_expression = &ctx.text()[search_start as usize..expression.pos() as usize];
+    let before_expression = &ctx.text()[search_start as usize..pos_u32(expression.pos()) as usize];
     let start = before_expression.rfind("/**")?;
     let end = before_expression.rfind("*/")?;
     if end < start {
         return None;
     }
-    Some((search_start + start as i32, search_start + end as i32 + "*/".len() as i32))
+    Some((
+        search_start + start as i32,
+        search_start + end as i32 + "*/".len() as i32,
+    ))
 }
 
 fn assertion_range(ctx: &Ctx, node: P<Node>) -> (i32, i32) {
@@ -1318,16 +1340,18 @@ fn create_assertion_fixer(ctx: &mut Ctx, node: P<Node>) -> Vec<RuleFix> {
     let expression = node.expression().unwrap();
     if let Some((pos, mut end)) = js_doc_assertion_range(ctx, node) {
         let text = ctx.text().as_bytes();
-        while end < expression.pos() && utils::is_str_white_space(text[end as usize] as char) {
+        while end < pos_i32(expression.pos())
+            && utils::is_str_white_space(text[end as usize] as char)
+        {
             end += 1;
         }
         return vec![ctx.fix_remove_range(pos, end)];
     }
     let type_node = node.type_node().unwrap();
     if ast::is_type_assertion(node) {
-        let mut s = tsrs_scanner::get_scanner_for_source_file(ctx.file, node.pos());
+        let mut s = tsrs_scanner::get_scanner_for_source_file(ctx.file, pos_u32(node.pos()));
         let opening_angle_bracket = s.token_range();
-        s.reset_pos(type_node.end());
+        s.reset_pos(pos_u32(type_node.end()));
         s.scan();
         let closing_angle_bracket = s.token_range();
         s.scan();
@@ -1353,7 +1377,10 @@ fn create_assertion_fixer(ctx: &mut Ctx, node: P<Node>) -> Vec<RuleFix> {
         if needs_parens {
             fixes.push(ctx.fix_insert_before(node, "("));
         }
-        fixes.push(ctx.fix_remove_range(opening_angle_bracket.pos(), closing_angle_bracket.end()));
+        fixes.push(ctx.fix_remove_range(
+            pos_i32(opening_angle_bracket.pos()),
+            pos_i32(closing_angle_bracket.end()),
+        ));
         if needs_parens {
             fixes.push(ctx.fix_insert_after(node, ")"));
         }
@@ -1361,16 +1388,16 @@ fn create_assertion_fixer(ctx: &mut Ctx, node: P<Node>) -> Vec<RuleFix> {
     }
 
     // Preserve the token or comment before 'as' when removing the assertion.
-    let s = tsrs_scanner::get_scanner_for_source_file(ctx.file, expression.end());
+    let s = tsrs_scanner::get_scanner_for_source_file(ctx.file, pos_u32(expression.end()));
     let as_token = s.token_range();
-    let mut token_before_as_end = expression.end();
+    let mut token_before_as_end = pos_u32(expression.end());
     for comment in utils::get_comments_in_range(
         ctx.file,
-        tsrs_core::TextRange::new(expression.end(), as_token.pos()),
+        tsrs_core::TextRange::from_text_pos(expression.end(), as_token.pos()),
     ) {
         token_before_as_end = token_before_as_end.max(comment.end());
     }
-    vec![ctx.fix_remove_range(token_before_as_end, node.end())]
+    vec![ctx.fix_remove_range(token_before_as_end as i32, pos_i32(node.end()))]
 }
 
 /// Matching start positions limits traversal to the beginning of a statement and stops at existing
@@ -1501,12 +1528,22 @@ fn get_logical_result_type(
                 falsy_source = c.get_base_type_of_literal_type(right);
             }
             let falsy = c.extract_definitely_falsy_types(falsy_source);
-            c.get_union_type_ex(&[falsy, right], UnionReduction::Literal, AliasArg::None, None)
+            c.get_union_type_ex(
+                &[falsy, right],
+                UnionReduction::Literal,
+                AliasArg::None,
+                None,
+            )
         }
         Kind::BarBarToken if c.has_type_facts(left, TypeFacts::Falsy) => {
             let removed = c.remove_definitely_falsy_types(left);
             let truthy = c.get_non_nullable_type(removed);
-            c.get_union_type_ex(&[truthy, right], UnionReduction::Subtype, AliasArg::None, None)
+            c.get_union_type_ex(
+                &[truthy, right],
+                UnionReduction::Subtype,
+                AliasArg::None,
+                None,
+            )
         }
         Kind::QuestionQuestionToken if c.has_type_facts(left, TypeFacts::EQUndefinedOrNull) => {
             let non_nullable = c.get_non_nullable_type(left);
@@ -1557,10 +1594,10 @@ fn is_in_narrowing_assignment(
             // comparing narrowing with and without the cast.
             let mut other_type = Some(c.get_type_at_location(other));
             for name in property_path.iter().rev() {
-                let Some(other_ty) = other_type else { break };
-                let mut property_type = c.get_type_of_property_of_type(other_ty, name);
+                let Some(ot) = other_type else { break };
+                let mut property_type = c.get_type_of_property_of_type(ot, name);
                 if property_type.is_none() && atoi(name).is_some() {
-                    property_type = utils::get_number_index_type(c, other_ty);
+                    property_type = utils::get_number_index_type(c, ot);
                 }
                 other_type = property_type;
             }
@@ -1634,7 +1671,10 @@ fn is_in_narrowing_assignment(
                 // A later required property replaces this value, so its assertion cannot narrow the
                 // target. Match the checker's spread-property rules.
                 let properties = parent.properties();
-                let start = properties.iter().position(|&p| p == current).map_or(0, |i| i + 1);
+                let start = properties
+                    .iter()
+                    .position(|&p| p == current)
+                    .map_or(0, |i| i + 1);
                 let last = property_path.last().unwrap().clone();
                 for &property in &properties[start..] {
                     if ast::is_spread_assignment(property) {
@@ -1646,7 +1686,7 @@ fn is_in_narrowing_assignment(
                                     overwriting,
                                 )
                                 .intersects(ModifierFlags::Private | ModifierFlags::Protected)
-                                && c.is_spreadable_property(overwriting)
+                                && Checker::is_spreadable_property(overwriting)
                             {
                                 return false;
                             }

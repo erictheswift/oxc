@@ -5,7 +5,7 @@ use tsrs_ast::{self as ast, FunctionFlags, Kind, Node};
 use tsrs_checker::{Checker, Type, TypeFlags, TypePredicate, TypePredicateKind};
 use tsrs_core::P;
 
-use crate::rule::{Ctx, Listener, Rule, RuleMessage, RuleVisitor, opt_bool, options_object};
+use crate::rule::{opt_bool, options_object, Ctx, Listener, Rule, RuleMessage, RuleVisitor};
 use crate::utils;
 
 fn build_condition_error_number_message() -> RuleMessage {
@@ -81,10 +81,7 @@ fn build_condition_error_any_message() -> RuleMessage {
     )
 }
 fn build_no_strict_null_check_message() -> RuleMessage {
-    RuleMessage::new(
-        "noStrictNullCheck",
-        "This rule requires the `strictNullChecks` compiler option to be turned on to function correctly.",
-    )
+    RuleMessage::new("noStrictNullCheck", "This rule requires the `strictNullChecks` compiler option to be turned on to function correctly.")
 }
 fn build_predicate_cannot_be_async_message() -> RuleMessage {
     RuleMessage::new(
@@ -138,7 +135,10 @@ impl Rule for StrictBooleanExpressions {
         if !utils::is_strict_compiler_option_enabled(&options, options.strict_null_checks) {
             ctx.report_range(0, 0, build_no_strict_null_check_message());
         }
-        Box::new(Visitor { opts: self, traversed_nodes: FxHashSet::default() })
+        Box::new(Visitor {
+            opts: self,
+            traversed_nodes: FxHashSet::default(),
+        })
     }
 }
 
@@ -216,8 +216,9 @@ impl Visitor {
             for &signature in signatures {
                 let mut return_type = ctx.checker.get_return_type_of_signature_exported(signature);
                 if return_type.flags().intersects(TypeFlags::TypeParameter) {
-                    if let Some(constraint) =
-                        ctx.checker.get_constraint_of_type_parameter_exported(return_type)
+                    if let Some(constraint) = ctx
+                        .checker
+                        .get_constraint_of_type_parameter_exported(return_type)
                     {
                         return_type = constraint;
                     }
@@ -323,11 +324,9 @@ fn find_truthiness_asserted_argument_in_predicate(
     if tp.kind.get() != TypePredicateKind::AssertsIdentifier || tp.t.get().is_some() {
         return None;
     }
-    let parameter_index = tp.parameter_index.get();
-    if parameter_index < 0 || parameter_index as usize >= checkable_arguments.len() {
-        return None;
-    }
-    Some(checkable_arguments[parameter_index as usize])
+    tp.parameter_index
+        .get()
+        .and_then(|i| checkable_arguments.get(i).copied())
 }
 
 fn check_node(ctx: &mut Ctx, node: P<Node>, opts: &StrictBooleanExpressions) {
@@ -405,9 +404,15 @@ fn analyze_type_part(t: P<Type>) -> TypeInfo {
     let mut info = TypeInfo::default();
     let flags = t.flags();
     if utils::is_intersection_type(t) {
-        let is_boolean =
-            t.types().iter().any(|&t2| analyze_type_part(t2).variant == TypeVariant::Boolean);
-        info.variant = if is_boolean { TypeVariant::Boolean } else { TypeVariant::Object };
+        let is_boolean = t
+            .types()
+            .iter()
+            .any(|&t2| analyze_type_part(t2).variant == TypeVariant::Boolean);
+        info.variant = if is_boolean {
+            TypeVariant::Boolean
+        } else {
+            TypeVariant::Object
+        };
         return info;
     }
     if flags.intersects(TypeFlags::TypeParameter) {

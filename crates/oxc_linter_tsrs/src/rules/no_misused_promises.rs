@@ -6,18 +6,24 @@ use tsrs_checker::{ContextFlags, Type, TypeFlags};
 use tsrs_core::P;
 
 use crate::rule::{
-    Ctx, LabeledRange, Listener, Rule, RuleDiagnostic, RuleMessage, RuleVisitor, options_object,
+    options_object, Ctx, LabeledRange, Listener, Rule, RuleDiagnostic, RuleMessage, RuleVisitor,
 };
 use crate::utils;
 
 fn conditional() -> RuleMessage {
-    RuleMessage::new("conditional", "Expected non-Promise value in a boolean conditional.")
+    RuleMessage::new(
+        "conditional",
+        "Expected non-Promise value in a boolean conditional.",
+    )
 }
 fn predicate() -> RuleMessage {
     RuleMessage::new("predicate", "Expected a non-Promise value to be returned.")
 }
 fn spread() -> RuleMessage {
-    RuleMessage::new("spread", "Expected a non-Promise value to be spread in an object.")
+    RuleMessage::new(
+        "spread",
+        "Expected a non-Promise value to be spread in an object.",
+    )
 }
 fn void_return_argument() -> RuleMessage {
     RuleMessage::new(
@@ -34,9 +40,7 @@ fn void_return_attribute() -> RuleMessage {
 fn void_return_inherited_method(heritage_type_name: &str) -> RuleMessage {
     RuleMessage::new(
         "voidReturnInheritedMethod",
-        format!(
-            "Promise-returning method provided where a void return was expected by extended/implemented type '{heritage_type_name}'."
-        ),
+        format!("Promise-returning method provided where a void return was expected by extended/implemented type '{heritage_type_name}'."),
     )
 }
 fn void_return_property() -> RuleMessage {
@@ -141,7 +145,11 @@ pub fn create(options: Option<&serde_json::Value>) -> Result<Box<dyn Rule>, Stri
         listeners.push(Listener::Enter(Kind::SpreadElement));
         listeners.push(Listener::Enter(Kind::SpreadAssignment));
     }
-    Ok(Box::new(NoMisusedPromises { checks_conditionals, variables, listeners }))
+    Ok(Box::new(NoMisusedPromises {
+        checks_conditionals,
+        variables,
+        listeners,
+    }))
 }
 
 impl Rule for NoMisusedPromises {
@@ -149,7 +157,10 @@ impl Rule for NoMisusedPromises {
         "no-misused-promises"
     }
     fn create_visitor(&'static self, _ctx: &mut Ctx) -> Box<dyn RuleVisitor> {
-        Box::new(Visitor { o: self, checked_nodes: FxHashSet::default() })
+        Box::new(Visitor {
+            o: self,
+            checked_nodes: FxHashSet::default(),
+        })
     }
 }
 
@@ -177,7 +188,9 @@ fn any_signature_is_thenable_type(ctx: &mut Ctx, node: P<Node>, t: P<Type>) -> b
 fn returns_thenable(ctx: &mut Ctx, node: P<Node>) -> bool {
     let at = ctx.checker.get_type_at_location(node);
     let t = ctx.checker.get_apparent_type(at);
-    utils::union_type_parts(t).into_iter().any(|t| any_signature_is_thenable_type(ctx, node, t))
+    utils::union_type_parts(t)
+        .into_iter()
+        .any(|t| any_signature_is_thenable_type(ctx, node, t))
 }
 
 fn local_expectation_for_declaration(
@@ -187,7 +200,10 @@ fn local_expectation_for_declaration(
 ) -> Option<VoidExpectation> {
     let declaration = declaration?;
     if ast::get_source_file_of_node(declaration) == Some(ctx.file) {
-        return Some(VoidExpectation { declaration, t: Some(t) });
+        return Some(VoidExpectation {
+            declaration,
+            t: Some(t),
+        });
     }
     None
 }
@@ -271,7 +287,12 @@ fn build_diagnostic(
             });
         }
     }
-    RuleDiagnostic { pos: primary.0, end: primary.1, message, labeled_ranges }
+    RuleDiagnostic {
+        pos: primary.0,
+        end: primary.1,
+        message,
+        labeled_ranges,
+    }
 }
 
 fn report_node(
@@ -303,7 +324,10 @@ fn check_array_predicates(ctx: &mut Ctx, node: P<Node>) {
 }
 
 fn is_function_param(ctx: &mut Ctx, param: P<Symbol>, node: P<Node>) -> bool {
-    let Some(st) = ctx.checker.get_type_of_symbol_at_location(param, Some(node)) else {
+    let Some(st) = ctx
+        .checker
+        .get_type_of_symbol_at_location(param, Some(node))
+    else {
         return false;
     };
     let t = ctx.checker.get_apparent_type(st);
@@ -321,7 +345,10 @@ fn is_always_thenable(ctx: &mut Ctx, node: P<Node>) -> bool {
         let Some(then_prop) = ctx.checker.get_property_of_type(sub_type, "then") else {
             return false;
         };
-        let then_type = ctx.checker.get_type_of_symbol_at_location(then_prop, Some(node)).unwrap();
+        let then_type = ctx
+            .checker
+            .get_type_of_symbol_at_location(then_prop, Some(node))
+            .unwrap();
         let mut has_thenable_signature = false;
         for sub in utils::union_type_parts(then_type) {
             for &signature in utils::get_call_signatures(ctx.checker, sub) {
@@ -376,8 +403,10 @@ fn check_heritage_type_for_member_returning_void(
     let Some(heritage_member) = get_member_if_exists(ctx, heritage_type, member_name) else {
         return;
     };
-    let member_type =
-        ctx.checker.get_type_of_symbol_at_location(heritage_member, Some(node_member)).unwrap();
+    let member_type = ctx
+        .checker
+        .get_type_of_symbol_at_location(heritage_member, Some(node_member))
+        .unwrap();
     if !is_void_returning_function_type(ctx, node_member, member_type) {
         return;
     }
@@ -397,7 +426,9 @@ fn check_jsx_attribute(ctx: &mut Ctx, node: P<Node>) {
     let Some(expression) = initializer.as_jsx_expression().expression() else {
         return;
     };
-    let Some(contextual_type) = ctx.checker.get_contextual_type(initializer, ContextFlags::None)
+    let Some(contextual_type) = ctx
+        .checker
+        .get_contextual_type(initializer, ContextFlags::None)
     else {
         return;
     };
@@ -405,11 +436,13 @@ fn check_jsx_attribute(ctx: &mut Ctx, node: P<Node>) {
         && returns_thenable(ctx, expression)
     {
         let mut expectation = None;
-        if let Some(attributes_type) =
-            ctx.checker.get_contextual_type(node.parent().unwrap(), ContextFlags::None)
+        if let Some(attributes_type) = ctx
+            .checker
+            .get_contextual_type(node.parent().unwrap(), ContextFlags::None)
         {
-            let property_symbol =
-                ctx.checker.get_property_of_type(attributes_type, node.name().unwrap().text());
+            let property_symbol = ctx
+                .checker
+                .get_property_of_type(attributes_type, node.name().unwrap().text());
             expectation = local_expectation_for_symbol(ctx, property_symbol, contextual_type);
         }
         report_node(ctx, expression, void_return_attribute(), expectation);
@@ -427,7 +460,9 @@ fn check_spread(ctx: &mut Ctx, node: P<Node>) {
 }
 
 fn is_thenable_returning_function_type(ctx: &mut Ctx, node: P<Node>, t: P<Type>) -> bool {
-    utils::union_type_parts(t).into_iter().any(|t| any_signature_is_thenable_type(ctx, node, t))
+    utils::union_type_parts(t)
+        .into_iter()
+        .any(|t| any_signature_is_thenable_type(ctx, node, t))
 }
 
 struct ArgumentState {
@@ -459,19 +494,19 @@ fn check_thenable_or_void_argument(
             }
         }
     }
-    let contextual_type = ctx.checker.get_contextual_type_for_argument_at_index(node, index as i32);
-    if let Some(contextual_type) = contextual_type {
-        if contextual_type != t {
-            check_thenable_or_void_argument(
-                ctx,
-                node,
-                contextual_type,
-                index,
-                state,
-                parameter_declaration,
-                true,
-            );
-        }
+    let contextual_type = ctx
+        .checker
+        .get_contextual_type_for_argument_at_index(node, index);
+    if contextual_type != t {
+        check_thenable_or_void_argument(
+            ctx,
+            node,
+            contextual_type,
+            index,
+            state,
+            parameter_declaration,
+            true,
+        );
     }
 }
 
@@ -501,8 +536,10 @@ fn void_function_arguments(
         for &signature in signatures {
             for (index, &parameter) in signature.parameters.get().iter().enumerate() {
                 let parameter_declaration = parameter.value_declaration();
-                let mut t =
-                    ctx.checker.get_type_of_symbol_at_location(parameter, Some(callee)).unwrap();
+                let mut t = ctx
+                    .checker
+                    .get_type_of_symbol_at_location(parameter, Some(callee))
+                    .unwrap();
                 if parameter_declaration.is_some_and(utils::is_rest_parameter_declaration) {
                     if ctx.checker.is_array_type(t) {
                         t = ctx.checker.get_type_arguments(t)[0];
@@ -571,7 +608,12 @@ fn check_arguments(ctx: &mut Ctx, node: P<Node>) {
             continue;
         }
         if returns_thenable(ctx, argument) {
-            report_node(ctx, argument, void_return_argument(), expectations.get(&index).copied());
+            report_node(
+                ctx,
+                argument,
+                void_return_argument(),
+                expectations.get(&index).copied(),
+            );
         }
     }
 }
@@ -633,7 +675,9 @@ fn local_property_expectation(
     if !ast::is_object_literal_expression(parent) {
         return None;
     }
-    let obj_type = ctx.checker.get_contextual_type(parent, ContextFlags::None)?;
+    let obj_type = ctx
+        .checker
+        .get_contextual_type(parent, ContextFlags::None)?;
     let property_symbol = ctx.checker.get_property_of_type(obj_type, name.text());
     local_expectation_for_symbol(ctx, property_symbol, t)
 }
@@ -641,8 +685,9 @@ fn local_property_expectation(
 fn check_property(ctx: &mut Ctx, node: P<Node>) {
     if ast::is_property_assignment(node) {
         let initializer = node.as_property_assignment().initializer();
-        let Some(contextual_type) =
-            ctx.checker.get_contextual_type(initializer, ContextFlags::None)
+        let Some(contextual_type) = ctx
+            .checker
+            .get_contextual_type(initializer, ContextFlags::None)
         else {
             return;
         };
@@ -682,8 +727,10 @@ fn check_property(ctx: &mut Ctx, node: P<Node>) {
         let Some(property_symbol) = ctx.checker.get_property_of_type(obj_type, name.text()) else {
             return;
         };
-        let contextual_type =
-            ctx.checker.get_type_of_symbol_at_location(property_symbol, Some(name)).unwrap();
+        let contextual_type = ctx
+            .checker
+            .get_type_of_symbol_at_location(property_symbol, Some(name))
+            .unwrap();
         if is_void_returning_function_type(ctx, name, contextual_type) {
             let e = local_expectation_for_symbol(ctx, Some(property_symbol), contextual_type);
             report_node(ctx, node, void_return_property(), e);
@@ -736,7 +783,9 @@ fn check_return_statement(ctx: &mut Ctx, node: P<Node>) {
             }
         }
     }
-    let Some(contextual_type) = ctx.checker.get_contextual_type(expression, ContextFlags::None)
+    let Some(contextual_type) = ctx
+        .checker
+        .get_contextual_type(expression, ContextFlags::None)
     else {
         return;
     };
@@ -746,7 +795,10 @@ fn check_return_statement(ctx: &mut Ctx, node: P<Node>) {
         let mut expectation = None;
         if let Some(f) = function_node {
             if f.type_node().is_some() {
-                expectation = Some(VoidExpectation { declaration: f, t: Some(contextual_type) });
+                expectation = Some(VoidExpectation {
+                    declaration: f,
+                    t: Some(contextual_type),
+                });
             } else if let Some(function_type) =
                 ctx.checker.get_contextual_type(f, ContextFlags::None)
             {
@@ -807,7 +859,10 @@ fn check_variable_declaration(ctx: &mut Ctx, node: P<Node>) {
             ctx,
             initializer,
             void_return_variable(),
-            Some(VoidExpectation { declaration: node, t: Some(var_type) }),
+            Some(VoidExpectation {
+                declaration: node,
+                t: Some(var_type),
+            }),
         );
     }
 }

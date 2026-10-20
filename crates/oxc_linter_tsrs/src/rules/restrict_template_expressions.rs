@@ -5,8 +5,8 @@ use tsrs_checker::{Type, TypeFlags};
 use tsrs_core::P;
 
 use crate::rule::{
-    Ctx, LabeledRange, Listener, Rule, RuleDiagnostic, RuleMessage, RuleVisitor, opt_bool,
-    options_object,
+    opt_bool, options_object, Ctx, LabeledRange, Listener, Rule, RuleDiagnostic, RuleMessage,
+    RuleVisitor,
 };
 use crate::utils::{self, TypeOrValueSpecifier, TypeOrValueSpecifierFrom};
 
@@ -18,7 +18,11 @@ fn build_invalid_type_diagnostic(pos: i32, end: i32, t: &str) -> RuleDiagnostic 
             "invalidType",
             "Invalid type used in template literal expression.",
         ),
-        labeled_ranges: vec![LabeledRange { label: format!("Type: {t}"), pos, end }],
+        labeled_ranges: vec![LabeledRange {
+            label: format!("Type: {t}"),
+            pos,
+            end,
+        }],
     }
 }
 
@@ -106,7 +110,10 @@ impl RuleVisitor for Visitor {
     }
     fn visit(&mut self, ctx: &mut Ctx, _l: Listener, node: P<Node>) {
         // don't check tagged template literals
-        if node.parent().is_some_and(ast::is_tagged_template_expression) {
+        if node
+            .parent()
+            .is_some_and(ast::is_tagged_template_expression)
+        {
             return;
         }
         for &span in node.as_template_expression().template_spans().nodes() {

@@ -7,14 +7,14 @@ use rustc_hash::{FxHashMap, FxHashSet};
 pub fn get_function_head_loc(source_file: P<SourceFile>, node: P<Node>) -> (i32, i32) {
     if ast::is_arrow_function(node) {
         if let Some(arrow) = node.as_arrow_function().equals_greater_than_token {
-            return (arrow.pos(), arrow.end());
+            return (pos_i32(arrow.pos()), pos_i32(arrow.end()));
         }
     }
     let Some(params) = node.parameter_list() else {
         return trim_node_text_range(source_file, node);
     };
     // The parameter list's range starts right after `(`, so `pos() - 1` is the `(`.
-    let end = params.pos() - 1;
+    let end = pos_i32(params.pos()) - 1;
     // Skip leading decorators; keep modifiers such as `export`, `public`, `async`.
     let mut start = tsrs_scanner::get_token_pos_of_node(node, source_file, false);
     for &m in node.modifier_nodes() {
@@ -23,14 +23,22 @@ pub fn get_function_head_loc(source_file: P<SourceFile>, node: P<Node>) -> (i32,
             break;
         }
     }
+    let start = start as i32;
     if end < start {
         return trim_node_text_range(source_file, node);
     }
     (start, end)
 }
 
-const ARRAY_PREDICATE_FUNCTIONS: &[&str] =
-    &["every", "filter", "find", "findIndex", "findLast", "findLastIndex", "some"];
+const ARRAY_PREDICATE_FUNCTIONS: &[&str] = &[
+    "every",
+    "filter",
+    "find",
+    "findIndex",
+    "findLast",
+    "findLastIndex",
+    "some",
+];
 
 /// ts_eslint.go IsArrayMethodCallWithPredicate (`node` is the CallExpression).
 pub fn is_array_method_call_with_predicate(c: &mut Checker, node: P<Node>) -> bool {
@@ -39,7 +47,7 @@ pub fn is_array_method_call_with_predicate(c: &mut Checker, node: P<Node>) -> bo
         return false;
     }
     let (property_name, ok) = c.get_accessed_property_name(callee);
-    if !ok || !ARRAY_PREDICATE_FUNCTIONS.contains(&property_name.as_str()) {
+    if !ok || !ARRAY_PREDICATE_FUNCTIONS.contains(&&*property_name) {
         return false;
     }
     let t = get_constrained_type_at_location(c, callee.expression().unwrap());
@@ -49,7 +57,10 @@ pub fn is_array_method_call_with_predicate(c: &mut Checker, node: P<Node>) -> bo
 /// ts_eslint.go IsRestParameterDeclaration.
 pub fn is_rest_parameter_declaration(decl: P<Node>) -> bool {
     ast::is_parameter_declaration(decl)
-        && decl.as_parameter_declaration().dot_dot_dot_token().is_some()
+        && decl
+            .as_parameter_declaration()
+            .dot_dot_dot_token()
+            .is_some()
 }
 
 /// ts_eslint.go GetForStatementHeadLoc.
@@ -60,7 +71,7 @@ pub fn get_for_statement_head_loc(source_file: P<SourceFile>, node: P<Node>) -> 
         node.as_for_in_or_of_statement().statement
     };
     let (pos, _) = trim_node_text_range(source_file, node);
-    (pos, statement.pos())
+    (pos, pos_i32(statement.pos()))
 }
 
 /// ts_eslint.go GetDeclaration.
@@ -103,14 +114,19 @@ pub fn get_type_name(c: &mut Checker, t: P<Type>) -> String {
     }
     // If the type is a union and all types in the union are string like,
     // return `string`.
-    if is_union_type(t) && union_type_parts(t).into_iter().all(|t| get_type_name(c, t) == "string")
+    if is_union_type(t)
+        && union_type_parts(t)
+            .into_iter()
+            .all(|t| get_type_name(c, t) == "string")
     {
         return "string".to_string();
     }
     // If the type is an intersection and a type in the intersection is string
     // like, return `string`.
     if is_intersection_type(t)
-        && intersection_type_parts(t).into_iter().any(|t| get_type_name(c, t) == "string")
+        && intersection_type_parts(t)
+            .into_iter()
+            .any(|t| get_type_name(c, t) == "string")
     {
         return "string".to_string();
     }
@@ -321,7 +337,12 @@ fn get_base_enum_type(c: &mut Checker, t: P<Type>) -> P<Type> {
     if !is_symbol_flag_set(symbol, SymbolFlags::EnumMember) {
         return t;
     }
-    let parent = symbol.unwrap().value_declaration().unwrap().parent().unwrap();
+    let parent = symbol
+        .unwrap()
+        .value_declaration()
+        .unwrap()
+        .parent()
+        .unwrap();
     c.get_type_at_location(parent)
 }
 
@@ -335,7 +356,10 @@ pub fn get_enum_literals(t: P<Type>) -> Vec<P<Type>> {
 
 /// ts_eslint.go GetEnumTypes: the enum types of a type (0 or more).
 pub fn get_enum_types(c: &mut Checker, t: P<Type>) -> Vec<P<Type>> {
-    get_enum_literals(t).into_iter().map(|t| get_base_enum_type(c, t)).collect()
+    get_enum_literals(t)
+        .into_iter()
+        .map(|t| get_base_enum_type(c, t))
+        .collect()
 }
 
 /// ts_eslint.go IsParenlessArrowFunction.
@@ -364,10 +388,16 @@ pub fn get_name_from_member(
 ) -> (String, MemberNameType) {
     match member.kind() {
         Kind::Identifier => {
-            return (member.as_identifier().text().to_string(), MemberNameType::Normal);
+            return (
+                member.as_identifier().text().to_string(),
+                MemberNameType::Normal,
+            )
         }
         Kind::PrivateIdentifier => {
-            return (member.as_private_identifier().text().to_string(), MemberNameType::Private);
+            return (
+                member.as_private_identifier().text().to_string(),
+                MemberNameType::Private,
+            )
         }
         Kind::ComputedPropertyName => {
             let expr = member.as_computed_property_name().expression;
@@ -382,5 +412,8 @@ pub fn get_name_from_member(
         _ => {}
     }
     let (pos, end) = trim_node_text_range(source_file, member);
-    (source_file.text()[pos as usize..end as usize].to_string(), MemberNameType::Expression)
+    (
+        source_file.text()[pos as usize..end as usize].to_string(),
+        MemberNameType::Expression,
+    )
 }

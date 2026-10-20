@@ -13,7 +13,10 @@ use crate::rule::{Ctx, Listener, Rule, RuleFix, RuleMessage, RuleVisitor};
 use crate::utils;
 
 fn build_reg_exp_exec_over_string_match_message() -> RuleMessage {
-    RuleMessage::new("regExpExecOverStringMatch", "Use the `RegExp#exec()` method instead.")
+    RuleMessage::new(
+        "regExpExecOverStringMatch",
+        "Use the `RegExp#exec()` method instead.",
+    )
 }
 
 const ARGUMENT_TYPE_OTHER: i32 = 0;
@@ -36,7 +39,10 @@ struct StaticArgumentValue {
 
 impl StaticArgumentValue {
     fn of(kind: StaticArgumentValueKind) -> StaticArgumentValue {
-        StaticArgumentValue { kind, reg_exp_flags: "" }
+        StaticArgumentValue {
+            kind,
+            reg_exp_flags: "",
+        }
     }
 }
 
@@ -136,7 +142,9 @@ fn extract_regex_literal_flags(node: P<Node>) -> Option<&'static str> {
         }
         backslashes % 2 == 1
     };
-    let closing_slash = (1..bytes.len()).rev().find(|&i| bytes[i] == b'/' && !is_escaped(i))?;
+    let closing_slash = (1..bytes.len())
+        .rev()
+        .find(|&i| bytes[i] == b'/' && !is_escaped(i))?;
     Some(&text[closing_slash + 1..])
 }
 
@@ -182,7 +190,10 @@ fn get_static_argument_value(
         Kind::StringLiteral => return StaticArgumentValue::of(K::String),
         Kind::RegularExpressionLiteral => {
             return match extract_regex_literal_flags(node) {
-                Some(flags) => StaticArgumentValue { kind: K::RegExp, reg_exp_flags: flags },
+                Some(flags) => StaticArgumentValue {
+                    kind: K::RegExp,
+                    reg_exp_flags: flags,
+                },
                 None => StaticArgumentValue::of(K::Unknown),
             };
         }
@@ -222,7 +233,7 @@ fn get_static_argument_value(
             return result;
         }
         Kind::AsExpression | Kind::TypeAssertionExpression | Kind::NonNullExpression => {
-            return get_static_argument_value(ctx, node.expression().unwrap(), visited);
+            return get_static_argument_value(ctx, node.expression().unwrap(), visited)
         }
         _ => {}
     }
@@ -241,7 +252,10 @@ fn get_static_argument_value(
         if !arguments.is_empty() && !regexp2_syntax::compiles_ecmascript(arguments[0].text()) {
             return StaticArgumentValue::of(K::Unknown);
         }
-        return StaticArgumentValue { kind: K::RegExp, reg_exp_flags: flags };
+        return StaticArgumentValue {
+            kind: K::RegExp,
+            reg_exp_flags: flags,
+        };
     }
     StaticArgumentValue::of(K::Unknown)
 }
@@ -274,9 +288,12 @@ fn report_with_fix(
         report_node,
         build_reg_exp_exec_over_string_match_message(),
         |ctx| {
-            vec![build_wrapping_fix(ctx, call_node, &[object_node, argument_node], &|code| {
-                build_expression(&code[0], &code[1])
-            })]
+            vec![build_wrapping_fix(
+                ctx,
+                call_node,
+                &[object_node, argument_node],
+                &|code| build_expression(&code[0], &code[1]),
+            )]
         },
     );
 }

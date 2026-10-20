@@ -5,15 +5,21 @@ use tsrs_ast::{self as ast, Kind, Node};
 use tsrs_checker::Type;
 use tsrs_core::P;
 
-use crate::rule::{Ctx, Listener, Rule, RuleMessage, RuleVisitor, opt_bool, options_object};
+use crate::rule::{opt_bool, options_object, Ctx, Listener, Rule, RuleMessage, RuleVisitor};
 use crate::utils;
 
 fn is_optional_chain(node: P<Node>) -> bool {
     if ast::is_property_access_expression(node) {
-        return node.as_property_access_expression().question_dot_token().is_some();
+        return node
+            .as_property_access_expression()
+            .question_dot_token()
+            .is_some();
     }
     if ast::is_element_access_expression(node) {
-        return node.as_element_access_expression().question_dot_token().is_some();
+        return node
+            .as_element_access_expression()
+            .question_dot_token()
+            .is_some();
     }
     false
 }
@@ -124,18 +130,28 @@ impl Visitor {
         }
 
         let t = ctx.checker.get_type_at_location(expression);
-        let state = if utils::is_type_any_type(t) { State::Unsafe } else { State::Safe };
+        let state = if utils::is_type_any_type(t) {
+            State::Unsafe
+        } else {
+            State::Safe
+        };
         self.state_cache.insert(node, state);
 
         if state == State::Unsafe {
             let (property, property_name) = if ast::is_property_access_expression(node) {
                 let property = node.name().unwrap();
                 let (pos, end) = ctx.trim(property);
-                (property, format!(".{}", &ctx.text()[pos as usize..end as usize]))
+                (
+                    property,
+                    format!(".{}", &ctx.text()[pos as usize..end as usize]),
+                )
             } else {
                 let property = node.as_element_access_expression().argument_expression;
                 let (pos, end) = ctx.trim(property);
-                (property, format!("[{}]", &ctx.text()[pos as usize..end as usize]))
+                (
+                    property,
+                    format!("[{}]", &ctx.text()[pos as usize..end as usize]),
+                )
             };
 
             if !self.is_no_implicit_this {

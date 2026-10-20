@@ -6,7 +6,7 @@ use std::time::SystemTime;
 
 use rustc_hash::FxHashMap;
 use tsrs_core::tspath;
-use tsrs_vfs::{Entries, FS, FileInfo};
+use tsrs_vfs::{Entries, FileInfo, FS};
 
 pub struct OverlayFS {
     base: Arc<dyn FS>,
@@ -15,7 +15,10 @@ pub struct OverlayFS {
 
 impl OverlayFS {
     pub fn new(base: Arc<dyn FS>, files: FxHashMap<String, String>) -> OverlayFS {
-        let files = files.into_iter().map(|(k, v)| (tspath::normalize_path(&k), v)).collect();
+        let files = files
+            .into_iter()
+            .map(|(k, v)| (tspath::normalize_path(&k), v))
+            .collect();
         OverlayFS { base, files }
     }
 }

@@ -4,7 +4,7 @@ use tsrs_ast::{self as ast, Kind, Node};
 use tsrs_core::P;
 
 use crate::rule::{Ctx, Listener, Rule, RuleMessage, RuleVisitor};
-use crate::utils;
+use crate::utils::{self, pos_i32, pos_u32};
 
 fn build_prefer_type_parameter_message() -> RuleMessage {
     RuleMessage::new(
@@ -60,24 +60,34 @@ impl RuleVisitor for Visitor {
         let initializer_type = ctx.checker.get_type_at_location(assertion_expr);
         let asserted_type = ctx.checker.get_type_at_location(assertion_type);
         // don't report this if the resulting fix will be a type error
-        if !ctx.checker.is_type_assignable_to(initializer_type, asserted_type) {
+        if !ctx
+            .checker
+            .is_type_assignable_to(initializer_type, asserted_type)
+        {
             return;
         }
         let callee_obj_type =
             utils::get_constrained_type_at_location(ctx.checker, callee.expression().unwrap());
-        if utils::type_recurser(callee_obj_type, &mut |t| !ctx.checker.is_array_or_tuple_type(t)) {
+        if utils::type_recurser(callee_obj_type, &mut |t| {
+            !ctx.checker.is_array_or_tuple_type(t)
+        }) {
             return;
         }
         ctx.report_node_with_fixes(second_arg, build_prefer_type_parameter_message(), |ctx| {
             let mut fixes = Vec::with_capacity(2);
             if second_arg.kind() == Kind::AsExpression {
-                fixes.push(ctx.fix_remove_range(assertion_expr.end(), assertion_type.end()));
+                fixes.push(ctx.fix_remove_range(
+                    pos_i32(assertion_expr.end()),
+                    pos_i32(assertion_type.end()),
+                ));
             } else {
-                fixes.push(ctx.fix_remove_range(second_arg.pos(), assertion_expr.pos()));
+                fixes.push(
+                    ctx.fix_remove_range(pos_i32(second_arg.pos()), pos_i32(assertion_expr.pos())),
+                );
             }
             if node.type_argument_list().is_none() {
-                let text =
-                    &ctx.text()[assertion_type.pos() as usize..assertion_type.end() as usize];
+                let text = &ctx.text()[pos_u32(assertion_type.pos()) as usize
+                    ..pos_u32(assertion_type.end()) as usize];
                 fixes.push(ctx.fix_insert_after(callee, format!("<{text}>")));
             }
             fixes

@@ -12,9 +12,7 @@ use crate::utils;
 fn build_error_type_overrides_message(type_name: &str, container: &str) -> RuleMessage {
     RuleMessage::new(
         "errorTypeOverrides",
-        format!(
-            "'{type_name}' is an 'error' type that acts as 'any' and overrides all other types in this {container} type."
-        ),
+        format!("'{type_name}' is an 'error' type that acts as 'any' and overrides all other types in this {container} type."),
     )
 }
 fn build_literal_overridden_message(literal: &str, primitive: &str) -> RuleMessage {
@@ -100,10 +98,10 @@ impl TypeFlagsWithNodeOrType {
                     let literal = node.as_literal_type_node().literal;
                     match literal.kind() {
                         Kind::TemplateLiteralType | Kind::NoSubstitutionTemplateLiteral => {
-                            return "template literal type".to_string();
+                            return "template literal type".to_string()
                         }
                         Kind::StringLiteral | Kind::NumericLiteral | Kind::BigIntLiteral => {
-                            return literal.text().to_string();
+                            return literal.text().to_string()
                         }
                         _ => {}
                     }
@@ -121,7 +119,11 @@ impl TypeFlagsWithNodeOrType {
 }
 
 fn join_parts(c: &mut Checker, parts: &[TypeFlagsWithNodeOrType]) -> String {
-    parts.iter().map(|p| p.to_display(c)).collect::<Vec<_>>().join(" | ")
+    parts
+        .iter()
+        .map(|p| p.to_display(c))
+        .collect::<Vec<_>>()
+        .join(" | ")
 }
 
 fn get_type_node_type_part_flags(ctx: &mut Ctx, node: P<Node>) -> Vec<TypeFlagsWithNodeOrType> {
@@ -137,7 +139,11 @@ fn get_type_node_type_part_flags(ctx: &mut Ctx, node: P<Node>) -> Vec<TypeFlagsW
         _ => TypeFlags::empty(),
     };
     if !flags.is_empty() {
-        return vec![TypeFlagsWithNodeOrType { flags, node: Some(node), t: None }];
+        return vec![TypeFlagsWithNodeOrType {
+            flags,
+            node: Some(node),
+            t: None,
+        }];
     }
     if ast::is_literal_type_node(node) {
         flags = match node.as_literal_type_node().literal.kind() {
@@ -148,7 +154,11 @@ fn get_type_node_type_part_flags(ctx: &mut Ctx, node: P<Node>) -> Vec<TypeFlagsW
             _ => TypeFlags::empty(),
         };
         if !flags.is_empty() {
-            return vec![TypeFlagsWithNodeOrType { flags, node: Some(node), t: None }];
+            return vec![TypeFlagsWithNodeOrType {
+                flags,
+                node: Some(node),
+                t: None,
+            }];
         }
     }
     if node.kind() == Kind::UnionType {
@@ -160,10 +170,18 @@ fn get_type_node_type_part_flags(ctx: &mut Ctx, node: P<Node>) -> Vec<TypeFlagsW
     }
     let t = ctx.checker.get_type_at_location(node);
     let boolean_type = ctx.checker.get_boolean_type();
-    let type_parts = if t == boolean_type { vec![t] } else { utils::union_type_parts(t) };
+    let type_parts = if t == boolean_type {
+        vec![t]
+    } else {
+        utils::union_type_parts(t)
+    };
     type_parts
         .into_iter()
-        .map(|part| TypeFlagsWithNodeOrType { flags: part.flags(), node: None, t: Some(part) })
+        .map(|part| TypeFlagsWithNodeOrType {
+            flags: part.flags(),
+            node: None,
+            t: Some(part),
+        })
         .collect()
 }
 
@@ -196,8 +214,10 @@ pub fn create(_options: Option<&serde_json::Value>) -> Result<Box<dyn Rule>, Str
     Ok(Box::new(NoRedundantTypeConstituents))
 }
 
-const LISTENERS: &[Listener] =
-    &[Listener::Enter(Kind::IntersectionType), Listener::Enter(Kind::UnionType)];
+const LISTENERS: &[Listener] = &[
+    Listener::Enter(Kind::IntersectionType),
+    Listener::Enter(Kind::UnionType),
+];
 
 impl Rule for NoRedundantTypeConstituents {
     fn name(&self) -> &'static str {
@@ -413,20 +433,26 @@ fn check_union(ctx: &mut Ctx, node: P<Node>) {
         }
     }
 
-    let mut check_overridden_types = |primitive_flag: TypeFlags,
-                                      overridden_nodes: &OverriddenNodes,
-                                      primitive_name: &str| {
-        if !seen_primitive_type_flags.intersects(primitive_flag) {
-            return;
-        }
-        for (type_node, type_flags) in overridden_nodes {
-            let literal = join_parts(ctx.checker, type_flags);
-            ctx.report_node(*type_node, build_literal_overridden_message(&literal, primitive_name));
-        }
-    };
+    let mut check_overridden_types =
+        |primitive_flag: TypeFlags, overridden_nodes: &OverriddenNodes, primitive_name: &str| {
+            if !seen_primitive_type_flags.intersects(primitive_flag) {
+                return;
+            }
+            for (type_node, type_flags) in overridden_nodes {
+                let literal = join_parts(ctx.checker, type_flags);
+                ctx.report_node(
+                    *type_node,
+                    build_literal_overridden_message(&literal, primitive_name),
+                );
+            }
+        };
 
     check_overridden_types(TypeFlags::BigInt, &overridden_big_int_type_nodes, "bigint");
-    check_overridden_types(TypeFlags::Boolean, &overridden_boolean_type_nodes, "boolean");
+    check_overridden_types(
+        TypeFlags::Boolean,
+        &overridden_boolean_type_nodes,
+        "boolean",
+    );
     check_overridden_types(TypeFlags::Number, &overridden_number_type_nodes, "number");
     check_overridden_types(TypeFlags::String, &overridden_string_type_nodes, "string");
 }

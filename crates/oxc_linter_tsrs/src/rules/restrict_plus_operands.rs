@@ -5,8 +5,8 @@ use tsrs_checker::{Type, TypeFlags};
 use tsrs_core::P;
 
 use crate::rule::{
-    Ctx, LabeledRange, Listener, Rule, RuleDiagnostic, RuleMessage, RuleVisitor, opt_bool,
-    options_object,
+    opt_bool, options_object, Ctx, LabeledRange, Listener, Rule, RuleDiagnostic, RuleMessage,
+    RuleVisitor,
 };
 use crate::utils;
 
@@ -126,7 +126,10 @@ pub fn create(options: Option<&serde_json::Value>) -> Result<Box<dyn Rule>, Stri
     let string_like = match string_likes.len() {
         0 => "string".to_string(),
         1 => format!("string, allowing a string + {}", string_likes[0]),
-        _ => format!("string, allowing a string + any of: {}", string_likes.join(", ")),
+        _ => format!(
+            "string, allowing a string + any of: {}",
+            string_likes.join(", ")
+        ),
     };
 
     let mut invalid_flags = TypeFlags::ESSymbolLike | TypeFlags::Never | TypeFlags::Unknown;
@@ -193,7 +196,9 @@ impl Visitor {
                     continue;
                 }
             } else if (opts.allow_any || !utils::is_type_any_type(part))
-                && !utils::intersection_type_parts(part).into_iter().all(utils::is_object_type)
+                && !utils::intersection_type_parts(part)
+                    .into_iter()
+                    .all(utils::is_object_type)
             {
                 continue;
             }

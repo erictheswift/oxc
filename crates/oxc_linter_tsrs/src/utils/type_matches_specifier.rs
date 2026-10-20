@@ -35,7 +35,7 @@ impl TypeOrValueSpecifier {
         }
         let Value::Object(m) = value else {
             return Err(
-                "TypeOrValueSpecifier must be a string or object with 'from' field".to_string()
+                "TypeOrValueSpecifier must be a string or object with 'from' field".to_string(),
             );
         };
         let opt_string = |key: &str| -> Result<Option<String>, String> {
@@ -55,7 +55,7 @@ impl TypeOrValueSpecifier {
             other => {
                 return Err(format!(
                     "invalid 'from' field: {other} (must be 'file', 'lib', or 'package')"
-                ));
+                ))
             }
         };
         let names = match m.get("name") {
@@ -122,10 +122,14 @@ fn type_declared_in_file(
 ) -> bool {
     let cwd = program.host().get_current_directory();
     if relative_path.is_empty() {
-        return declaration_files.iter().any(|f| f.is_some_and(|f| f.file_name().starts_with(cwd)));
+        return declaration_files
+            .iter()
+            .any(|f| f.is_some_and(|f| f.file_name().starts_with(cwd)));
     }
     let abs_path = tspath::get_normalized_absolute_path(relative_path, cwd);
-    declaration_files.iter().any(|f| f.is_some_and(|f| f.file_name() == abs_path))
+    declaration_files
+        .iter()
+        .any(|f| f.is_some_and(|f| f.file_name() == abs_path))
 }
 
 fn type_declared_in_lib(declaration_files: &[Option<P<SourceFile>>], program: &Program) -> bool {
@@ -133,7 +137,9 @@ fn type_declared_in_lib(declaration_files: &[Option<P<SourceFile>>], program: &P
     if declaration_files.is_empty() {
         return true;
     }
-    declaration_files.iter().any(|d| d.is_some_and(|d| is_source_file_default_library(program, d)))
+    declaration_files
+        .iter()
+        .any(|d| d.is_some_and(|d| is_source_file_default_library(program, d)))
 }
 
 fn find_parent_module_declaration(node: P<Node>) -> Option<P<Node>> {
@@ -270,7 +276,11 @@ fn get_types_package_name(package_name: &str) -> String {
     if slash_index <= 1 || slash_index + 1 >= package_name.len() {
         return package_name.to_string();
     }
-    format!("{}__{}", &package_name[1..slash_index], &package_name[slash_index + 1..])
+    format!(
+        "{}__{}",
+        &package_name[1..slash_index],
+        &package_name[slash_index + 1..]
+    )
 }
 
 fn type_declared_in_package_declaration_file(
@@ -288,8 +298,10 @@ fn declared_in_specifier_source(
     declarations: &[P<Node>],
     program: &Program,
 ) -> bool {
-    let declaration_files: Vec<Option<P<SourceFile>>> =
-        declarations.iter().map(|&d| ast::get_source_file_of_node(d)).collect();
+    let declaration_files: Vec<Option<P<SourceFile>>> = declarations
+        .iter()
+        .map(|&d| ast::get_source_file_of_node(d))
+        .collect();
     match specifier.from {
         TypeOrValueSpecifierFrom::Name => true,
         TypeOrValueSpecifierFrom::File => {
@@ -351,14 +363,25 @@ pub fn convert_type_or_value_specifier(spec: &serde_json::Value) -> Option<TypeO
     };
     let names = match m.get("name")? {
         Value::String(s) => vec![s.clone()],
-        Value::Array(a) => a.iter().filter_map(|n| n.as_str().map(str::to_string)).collect(),
+        Value::Array(a) => a
+            .iter()
+            .filter_map(|n| n.as_str().map(str::to_string))
+            .collect(),
         _ => return None,
     };
     Some(TypeOrValueSpecifier {
         from,
         name: names,
-        path: m.get("path").and_then(|p| p.as_str()).unwrap_or_default().to_string(),
-        package: m.get("package").and_then(|p| p.as_str()).unwrap_or_default().to_string(),
+        path: m
+            .get("path")
+            .and_then(|p| p.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        package: m
+            .get("package")
+            .and_then(|p| p.as_str())
+            .unwrap_or_default()
+            .to_string(),
     })
 }
 
@@ -372,7 +395,9 @@ pub fn type_matches_some_specifier(
         if is_intrinsic_error_type(t) {
             return false;
         }
-        specifiers.iter().any(|s| type_matches_specifier(t, s, program))
+        specifiers
+            .iter()
+            .any(|s| type_matches_specifier(t, s, program))
     };
     if matches(t) {
         return true;
@@ -419,8 +444,10 @@ fn value_matches_specifier(
     if specifier.from == TypeOrValueSpecifierFrom::Package {
         if let Some(symbol) = t.and_then(|t| t.symbol()) {
             let declarations = symbol.declarations();
-            let declaration_files: Vec<Option<P<SourceFile>>> =
-                declarations.iter().map(|&d| ast::get_source_file_of_node(d)).collect();
+            let declaration_files: Vec<Option<P<SourceFile>>> = declarations
+                .iter()
+                .map(|&d| ast::get_source_file_of_node(d))
+                .collect();
             return type_declared_in_package_declaration_file(
                 &specifier.package,
                 declarations,
@@ -440,5 +467,7 @@ pub fn value_matches_some_specifier(
     program: &Program,
     t: Option<P<Type>>,
 ) -> bool {
-    specifiers.iter().any(|s| value_matches_specifier(node, s, program, t))
+    specifiers
+        .iter()
+        .any(|s| value_matches_specifier(node, s, program, t))
 }

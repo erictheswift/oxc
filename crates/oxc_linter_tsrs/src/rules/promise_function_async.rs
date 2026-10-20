@@ -6,12 +6,15 @@ use tsrs_checker::{Checker, ObjectFlags, Type, TypeFlags};
 use tsrs_core::P;
 
 use crate::rule::{
-    Ctx, Listener, Rule, RuleMessage, RuleSuggestion, RuleVisitor, opt_bool, options_object,
+    opt_bool, options_object, Ctx, Listener, Rule, RuleMessage, RuleSuggestion, RuleVisitor,
 };
 use crate::utils;
 
 fn missing_async() -> RuleMessage {
-    RuleMessage::new("missingAsync", "Functions that return promises must be async.")
+    RuleMessage::new(
+        "missingAsync",
+        "Functions that return promises must be async.",
+    )
 }
 fn missing_async_hybrid_return() -> RuleMessage {
     RuleMessage::with_help(
@@ -21,7 +24,10 @@ fn missing_async_hybrid_return() -> RuleMessage {
     )
 }
 fn missing_async_hybrid_return_suggestion() -> RuleMessage {
-    RuleMessage::new("missingAsyncHybridReturnSuggestion", "Add `async` keyword to the function.")
+    RuleMessage::new(
+        "missingAsyncHybridReturnSuggestion",
+        "Add `async` keyword to the function.",
+    )
 }
 
 pub struct PromiseFunctionAsync {
@@ -97,9 +103,13 @@ impl Visitor {
         if utils::is_union_type(t) || utils::is_intersection_type(t) {
             let types = t.types();
             return if match_any_instead {
-                types.iter().all(|&t| self.contains_all_types_by_name(c, t, match_any_instead))
+                types
+                    .iter()
+                    .all(|&t| self.contains_all_types_by_name(c, t, match_any_instead))
             } else {
-                types.iter().any(|&t| self.contains_all_types_by_name(c, t, match_any_instead))
+                types
+                    .iter()
+                    .any(|&t| self.contains_all_types_by_name(c, t, match_any_instead))
             };
         }
         if !t.object_flags().intersects(ObjectFlags::ClassOrInterface) {
@@ -107,10 +117,14 @@ impl Visitor {
         }
         let bases = c.get_base_types(t);
         if match_any_instead {
-            bases.iter().any(|&b| self.contains_all_types_by_name(c, b, match_any_instead))
+            bases
+                .iter()
+                .any(|&b| self.contains_all_types_by_name(c, b, match_any_instead))
         } else {
             !bases.is_empty()
-                && bases.iter().all(|&b| self.contains_all_types_by_name(c, b, match_any_instead))
+                && bases
+                    .iter()
+                    .all(|&b| self.contains_all_types_by_name(c, b, match_any_instead))
         }
     }
 

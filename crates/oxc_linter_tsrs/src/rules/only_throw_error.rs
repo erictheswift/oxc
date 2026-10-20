@@ -4,7 +4,7 @@ use tsrs_ast::{self as ast, Kind, Node};
 use tsrs_checker::TypeFlags;
 use tsrs_core::P;
 
-use crate::rule::{Ctx, Listener, Rule, RuleMessage, RuleVisitor, opt_bool, options_object};
+use crate::rule::{opt_bool, options_object, Ctx, Listener, Rule, RuleMessage, RuleVisitor};
 use crate::utils::{self, TypeOrValueSpecifier};
 
 fn object() -> RuleMessage {
@@ -37,7 +37,11 @@ fn is_rethrown_error(ctx: &mut Ctx, node: P<Node>) -> bool {
     if !ast::is_parameter_declaration(decl) {
         return false;
     }
-    if decl.as_parameter_declaration().dot_dot_dot_token().is_some() {
+    if decl
+        .as_parameter_declaration()
+        .dot_dot_dot_token()
+        .is_some()
+    {
         return false;
     }
     if !ast::is_arrow_function(func_node) {

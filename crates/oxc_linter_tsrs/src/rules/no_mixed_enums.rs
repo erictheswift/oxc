@@ -58,7 +58,9 @@ fn get_member_type(c: &mut Checker, node: P<Node>) -> AllowedType {
 }
 
 fn get_desired_type_for_definition(c: &mut Checker, node: P<Node>) -> AllowedType {
-    let symbol = c.get_symbol_at_location_exported(node.name().unwrap()).unwrap();
+    let symbol = c
+        .get_symbol_at_location_exported(node.name().unwrap())
+        .unwrap();
     let declaration = symbol.declarations()[0];
     get_member_type(c, declaration.members()[0])
 }

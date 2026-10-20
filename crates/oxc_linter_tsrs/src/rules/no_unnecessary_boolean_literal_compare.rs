@@ -5,45 +5,27 @@ use tsrs_checker::TypeFlags;
 use tsrs_core::P;
 
 use crate::rule::{
-    Ctx, Listener, Rule, RuleFix, RuleMessage, RuleVisitor, opt_bool, options_object,
+    opt_bool, options_object, Ctx, Listener, Rule, RuleFix, RuleMessage, RuleVisitor,
 };
-use crate::utils;
+use crate::utils::{self, pos_u32};
 
 fn comparing_nullable_to_false() -> RuleMessage {
-    RuleMessage::new(
-        "comparingNullableToFalse",
-        "This expression unnecessarily compares a nullable boolean value to false instead of using the ?? operator to provide a default.",
-    )
+    RuleMessage::new("comparingNullableToFalse", "This expression unnecessarily compares a nullable boolean value to false instead of using the ?? operator to provide a default.")
 }
 fn comparing_nullable_to_true_direct() -> RuleMessage {
-    RuleMessage::new(
-        "comparingNullableToTrueDirect",
-        "This expression unnecessarily compares a nullable boolean value to true instead of using it directly.",
-    )
+    RuleMessage::new("comparingNullableToTrueDirect", "This expression unnecessarily compares a nullable boolean value to true instead of using it directly.")
 }
 fn comparing_nullable_to_true_negated() -> RuleMessage {
-    RuleMessage::new(
-        "comparingNullableToTrueNegated",
-        "This expression unnecessarily compares a nullable boolean value to true instead of negating it.",
-    )
+    RuleMessage::new("comparingNullableToTrueNegated", "This expression unnecessarily compares a nullable boolean value to true instead of negating it.")
 }
 fn direct() -> RuleMessage {
-    RuleMessage::new(
-        "direct",
-        "This expression unnecessarily compares a boolean value to a boolean instead of using it directly.",
-    )
+    RuleMessage::new("direct", "This expression unnecessarily compares a boolean value to a boolean instead of using it directly.")
 }
 fn negated() -> RuleMessage {
-    RuleMessage::new(
-        "negated",
-        "This expression unnecessarily compares a boolean value to a boolean instead of negating it.",
-    )
+    RuleMessage::new("negated", "This expression unnecessarily compares a boolean value to a boolean instead of negating it.")
 }
 fn no_strict_null_check() -> RuleMessage {
-    RuleMessage::new(
-        "noStrictNullCheck",
-        "This rule requires the `strictNullChecks` compiler option to be turned on to function correctly.",
-    )
+    RuleMessage::new("noStrictNullCheck", "This rule requires the `strictNullChecks` compiler option to be turned on to function correctly.")
 }
 
 pub struct NoUnnecessaryBooleanLiteralCompare {
@@ -119,10 +101,10 @@ fn is_conditional_test(mut node: P<Node>) -> bool {
             Kind::DoStatement => return parent.as_do_statement().expression == node,
             Kind::ForStatement => return parent.as_for_statement().condition == Some(node),
             Kind::ConditionalExpression => {
-                return parent.as_conditional_expression().condition == node;
+                return parent.as_conditional_expression().condition == node
             }
             Kind::PrefixUnaryExpression => {
-                return parent.as_prefix_unary_expression().operator == Kind::ExclamationToken;
+                return parent.as_prefix_unary_expression().operator == Kind::ExclamationToken
             }
             _ => return false,
         }
@@ -213,7 +195,8 @@ impl RuleVisitor for Visitor {
             let should_negate = cmp.negated != cmp.literal_boolean_in_comparison;
             let mutated = if is_unary_negation { parent } else { node };
             let text = ctx.text();
-            let expr_text = &text[cmp.expression.pos() as usize..cmp.expression.end() as usize];
+            let expr_text = &text
+                [pos_u32(cmp.expression.pos()) as usize..pos_u32(cmp.expression.end()) as usize];
             if cmp.expression_is_nullable_boolean
                 && cmp.literal_boolean_in_comparison
                 && should_negate != is_unary_negation

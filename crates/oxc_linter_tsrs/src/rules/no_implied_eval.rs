@@ -13,13 +13,19 @@ fn no_function_constructor() -> RuleMessage {
     )
 }
 fn no_implied_eval_error() -> RuleMessage {
-    RuleMessage::with_help("noImpliedEvalError", "Implied eval.", "Consider passing a function.")
+    RuleMessage::with_help(
+        "noImpliedEvalError",
+        "Implied eval.",
+        "Consider passing a function.",
+    )
 }
 
 const GLOBAL_CANDIDATES: &[&str] = &["global", "globalThis", "window"];
 const EVAL_LIKE_FUNCTIONS: &[&str] = &["execScript", "setImmediate", "setInterval", "setTimeout"];
-const LISTENERS: &[Listener] =
-    &[Listener::Enter(Kind::CallExpression), Listener::Enter(Kind::NewExpression)];
+const LISTENERS: &[Listener] = &[
+    Listener::Enter(Kind::CallExpression),
+    Listener::Enter(Kind::NewExpression),
+];
 
 pub struct NoImpliedEval;
 
@@ -124,7 +130,9 @@ impl RuleVisitor for Visitor {
         if EVAL_LIKE_FUNCTIONS.contains(&callee_name.as_str()) && !is_function(ctx, handler) {
             let symbol = ctx.checker.get_symbol_at_location_exported(expression);
             let declared_here = symbol.is_some_and(|s| {
-                s.declarations().iter().any(|&d| ast::get_source_file_of_node(d) == Some(ctx.file))
+                s.declarations()
+                    .iter()
+                    .any(|&d| ast::get_source_file_of_node(d) == Some(ctx.file))
             });
             if !declared_here {
                 ctx.report_node(handler, no_implied_eval_error());

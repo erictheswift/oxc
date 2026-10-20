@@ -6,10 +6,10 @@ use tsrs_checker::{Type, TypeFlags};
 use tsrs_core::P;
 
 use crate::rule::{
-    Ctx, LabeledRange, Listener, Rule, RuleDiagnostic, RuleFix, RuleMessage, RuleVisitor, opt_bool,
-    options_object,
+    opt_bool, options_object, Ctx, LabeledRange, Listener, Rule, RuleDiagnostic, RuleFix,
+    RuleMessage, RuleVisitor,
 };
-use crate::utils;
+use crate::utils::{self, pos_i32, pos_u32};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum UnionOrIntersection {
@@ -26,10 +26,16 @@ fn build_duplicate_message(
     } else {
         "Union"
     };
-    RuleMessage::new("duplicate", format!("{msg} type constituent is duplicated with {previous}."))
+    RuleMessage::new(
+        "duplicate",
+        format!("{msg} type constituent is duplicated with {previous}."),
+    )
 }
 fn build_unnecessary_message() -> RuleMessage {
-    RuleMessage::new("unnecessary", "Explicit undefined is unnecessary on an optional parameter.")
+    RuleMessage::new(
+        "unnecessary",
+        "Explicit undefined is unnecessary on an optional parameter.",
+    )
 }
 
 pub struct NoDuplicateTypeConstituents {
@@ -76,7 +82,11 @@ fn unwinded_parent_type(mut node: P<Node>, kind: Kind) -> Option<P<Node>> {
 }
 
 fn remove_range(r: tsrs_core::TextRange) -> RuleFix {
-    RuleFix { text: String::new(), pos: r.pos(), end: r.end() }
+    RuleFix {
+        text: String::new(),
+        pos: pos_i32(r.pos()),
+        end: pos_i32(r.end()),
+    }
 }
 
 fn compute_fixes(
@@ -90,17 +100,17 @@ fn compute_fixes(
         Kind::UnionType
     };
     let parent = unwinded_parent_type(constituent_node, kind).unwrap();
-    let mut s = tsrs_scanner::get_scanner_for_source_file(ctx.file, parent.pos());
+    let mut s = tsrs_scanner::get_scanner_for_source_file(ctx.file, pos_u32(parent.pos()));
     let mut found_before = false;
     let mut prev_start = 0;
     let mut bracket_before_tokens: Vec<tsrs_core::TextRange> = Vec::new();
     loop {
-        if s.token_start() >= constituent_node.pos() {
+        if s.token_start() >= pos_u32(constituent_node.pos()) {
             break;
         }
         if s.token() == Kind::AmpersandToken || s.token() == Kind::BarToken {
             found_before = true;
-            prev_start = s.token_start();
+            prev_start = s.token_start() as i32;
             bracket_before_tokens.clear();
         } else if s.token() == Kind::OpenParenToken {
             bracket_before_tokens.push(s.token_range());
@@ -114,20 +124,23 @@ fn compute_fixes(
         for &before in &bracket_before_tokens {
             fixes.push(remove_range(before));
         }
-        s.reset_pos(constituent_node.end());
+        s.reset_pos(pos_u32(constituent_node.end()));
         for _ in &bracket_before_tokens {
             s.scan();
             if s.token() != Kind::CloseParenToken {
-                panic!("expected next scanned token to be ')', got '{:?}'", s.token());
+                panic!(
+                    "expected next scanned token to be ')', got '{:?}'",
+                    s.token()
+                );
             }
             fixes.push(remove_range(s.token_range()));
         }
     } else {
-        s.reset_pos(constituent_node.end());
+        s.reset_pos(pos_u32(constituent_node.end()));
         let mut closing_parens_count = 0;
         loop {
             s.scan();
-            if s.token_start() >= parent.end() {
+            if s.token_start() >= pos_u32(parent.end()) {
                 panic!("couldn't find '&' or '|' token");
             }
             if s.token() == Kind::AmpersandToken || s.token() == Kind::BarToken {
@@ -135,7 +148,10 @@ fn compute_fixes(
                 break;
             }
             if s.token() != Kind::CloseParenToken {
-                panic!("expected next scanned token to be ')', got '{:?}'", s.token());
+                panic!(
+                    "expected next scanned token to be ')', got '{:?}'",
+                    s.token()
+                );
             }
             closing_parens_count += 1;
             fixes.push(remove_range(s.token_range()));
@@ -143,7 +159,7 @@ fn compute_fixes(
 
         let mut opening_parens: Vec<tsrs_core::TextRange> =
             Vec::with_capacity(closing_parens_count);
-        s.reset_pos(parent.pos());
+        s.reset_pos(pos_u32(parent.pos()));
         for _ in 0..closing_parens_count {
             s.scan();
             if s.token() == Kind::OpenParenToken {
@@ -153,7 +169,7 @@ fn compute_fixes(
             } else {
                 opening_parens.clear();
             }
-            if s.token_start() == constituent_node.pos() {
+            if s.token_start() == pos_u32(constituent_node.pos()) {
                 if opening_parens.len() != closing_parens_count {
                     panic!(
                         "expected to find {} opening parens, found only {}",
@@ -190,7 +206,12 @@ fn report(
         });
     }
     let (pos, end) = ctx.trim(constituent_node);
-    let d = RuleDiagnostic { pos, end, message, labeled_ranges };
+    let d = RuleDiagnostic {
+        pos,
+        end,
+        message,
+        labeled_ranges,
+    };
     if !with_fix {
         ctx.report_diagnostic(d);
         return;
@@ -209,7 +230,12 @@ fn for_each_node_type(ctx: &mut Ctx, union_node: P<Node>, t: P<Type>, constituen
     if !ast::is_parameter_declaration(parent) {
         return;
     }
-    if parent.as_parameter_declaration().question_token.get().is_none() {
+    if parent
+        .as_parameter_declaration()
+        .question_token
+        .get()
+        .is_none()
+    {
         return;
     }
     if utils::is_type_flag_set(t, TypeFlags::Undefined) {
@@ -238,7 +264,8 @@ fn check_duplicate_recursively(
     }
 
     if let Some(&previous) = cached_type_map.get(&t) {
-        let previous_text = &ctx.text()[previous.pos() as usize..previous.end() as usize];
+        let previous_text =
+            &ctx.text()[pos_u32(previous.pos()) as usize..pos_u32(previous.end()) as usize];
         report(
             ctx,
             with_fix,
@@ -287,10 +314,14 @@ fn check_duplicate_recursively(
 fn check_duplicate(ctx: &mut Ctx, node: P<Node>, union_node: Option<P<Node>>) {
     let mut cached_type_map: FxHashMap<P<Type>, P<Node>> = FxHashMap::default();
     let (union_or_intersection, types) = match node.kind() {
-        Kind::IntersectionType => {
-            (UnionOrIntersection::Intersection, node.as_intersection_type_node().types().nodes())
-        }
-        Kind::UnionType => (UnionOrIntersection::Union, node.as_union_type_node().types().nodes()),
+        Kind::IntersectionType => (
+            UnionOrIntersection::Intersection,
+            node.as_intersection_type_node().types().nodes(),
+        ),
+        Kind::UnionType => (
+            UnionOrIntersection::Union,
+            node.as_union_type_node().types().nodes(),
+        ),
         k => panic!("expected union or intersection, got {k:?}"),
     };
     for &t in types {

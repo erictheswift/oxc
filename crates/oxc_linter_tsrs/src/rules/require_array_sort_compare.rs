@@ -4,7 +4,7 @@ use tsrs_ast::{self as ast, Kind, Node};
 use tsrs_checker::TypeFlags;
 use tsrs_core::P;
 
-use crate::rule::{Ctx, Listener, Rule, RuleMessage, RuleVisitor, opt_bool, options_object};
+use crate::rule::{opt_bool, options_object, Ctx, Listener, Rule, RuleMessage, RuleVisitor};
 use crate::utils;
 
 fn build_require_compare_message() -> RuleMessage {

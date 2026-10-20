@@ -6,10 +6,10 @@ use tsrs_checker::Checker;
 use tsrs_core::P;
 
 use crate::rule::{
-    Ctx, LabeledRange, Listener, Rule, RuleDiagnostic, RuleMessage, RuleVisitor, opt_bool,
-    options_object,
+    opt_bool, options_object, Ctx, LabeledRange, Listener, Rule, RuleDiagnostic, RuleMessage,
+    RuleVisitor,
 };
-use crate::utils;
+use crate::utils::{self, pos_i32, pos_u32};
 
 fn build_type_over_value_message() -> RuleMessage {
     RuleMessage::with_help(
@@ -32,9 +32,7 @@ fn build_single_export_is_type_message(export_name: &str) -> RuleMessage {
 fn build_multiple_exports_are_types_message(export_names: &str) -> RuleMessage {
     RuleMessage::new(
         "multipleExportsAreTypes",
-        format!(
-            "Type exports {export_names} are not values and should be exported using `export type`."
-        ),
+        format!("Type exports {export_names} are not values and should be exported using `export type`."),
     )
 }
 
@@ -54,7 +52,10 @@ fn is_symbol_type_based(c: &mut Checker, mut symbol: Option<P<Symbol>>) -> (bool
         if !visited.insert(s) {
             break;
         }
-        if s.declarations().iter().any(|&d| ast::is_type_only_import_or_export_declaration(d)) {
+        if s.declarations()
+            .iter()
+            .any(|&d| ast::is_type_only_import_or_export_declaration(d))
+        {
             return (true, true);
         }
         let flags = s.flags.get();
@@ -94,7 +95,9 @@ fn strip_leading_type_keyword(specifier_text: &str) -> String {
     if !go_is_space(next) && next != b'/' {
         return specifier_text.to_string();
     }
-    specifier_text[4..].trim_start_matches([' ', '\t', '\r', '\n']).to_string()
+    specifier_text[4..]
+        .trim_start_matches([' ', '\t', '\r', '\n'])
+        .to_string()
 }
 
 fn get_export_specifier_text(source_file: P<SourceFile>, specifier_node: P<Node>) -> String {
@@ -103,7 +106,9 @@ fn get_export_specifier_text(source_file: P<SourceFile>, specifier_node: P<Node>
     if specifier.is_type_only() {
         return strip_leading_type_keyword(text);
     }
-    let local = specifier.property_name().unwrap_or_else(|| specifier.name());
+    let local = specifier
+        .property_name()
+        .unwrap_or_else(|| specifier.name());
     let exported = specifier.name();
     let local_text = get_node_text(source_file, local).trim();
     let exported_text = get_node_text(source_file, exported).trim();
@@ -114,11 +119,11 @@ fn get_export_specifier_text(source_file: P<SourceFile>, specifier_node: P<Node>
 }
 
 fn get_export_keyword_range(source_file: P<SourceFile>, node: P<Node>) -> (i32, i32) {
-    let mut s = tsrs_scanner::get_scanner_for_source_file(source_file, node.pos());
+    let mut s = tsrs_scanner::get_scanner_for_source_file(source_file, pos_u32(node.pos()));
     loop {
         if s.token() == Kind::ExportKeyword {
             let r = s.token_range();
-            return (r.pos(), r.end());
+            return (pos_i32(r.pos()), pos_i32(r.end()));
         }
         if s.token() == Kind::EndOfFile || s.token_range().pos() >= node.end() {
             break;
@@ -192,7 +197,9 @@ impl Visitor {
         let Some(module_specifier) = export_decl.module_specifier() else {
             return;
         };
-        let Some(module_symbol) = ctx.checker.get_symbol_at_location_exported(module_specifier)
+        let Some(module_symbol) = ctx
+            .checker
+            .get_symbol_at_location_exported(module_specifier)
         else {
             return;
         };
@@ -220,11 +227,16 @@ impl Visitor {
                 labeled_ranges: Vec::new(),
             },
             |ctx| {
-                let mut s = tsrs_scanner::get_scanner_for_source_file(ctx.file, node.pos());
+                let mut s =
+                    tsrs_scanner::get_scanner_for_source_file(ctx.file, pos_u32(node.pos()));
                 loop {
                     if s.token() == Kind::AsteriskToken {
                         let r = s.token_range();
-                        return vec![ctx.fix_replace_range(r.pos(), r.pos(), "type ")];
+                        return vec![ctx.fix_replace_range(
+                            pos_i32(r.pos()),
+                            pos_i32(r.pos()),
+                            "type ",
+                        )];
                     }
                     if s.token() == Kind::EndOfFile || s.token_range().pos() >= node.end() {
                         break;
@@ -259,7 +271,9 @@ impl Visitor {
                 report.type_texts.push(specifier_text);
                 continue;
             }
-            let name_node = specifier.property_name().unwrap_or_else(|| specifier.name());
+            let name_node = specifier
+                .property_name()
+                .unwrap_or_else(|| specifier.name());
             let symbol = ctx.checker.get_symbol_at_location_exported(name_node);
             let (is_type, resolved) = is_symbol_type_based(ctx.checker, symbol);
             if !resolved {
@@ -281,12 +295,12 @@ impl Visitor {
         if report.type_based_nodes.is_empty() {
             return;
         }
-        let (kpos, kw_end) = get_export_keyword_range(ctx.file, report.node);
+        let (kpos, kend) = get_export_keyword_range(ctx.file, report.node);
         if report.value_texts.is_empty() {
             ctx.report_diagnostic_with_fixes(
                 RuleDiagnostic {
                     pos: kpos,
-                    end: kw_end,
+                    end: kend,
                     message: build_type_over_value_message(),
                     labeled_ranges: Vec::new(),
                 },
@@ -324,7 +338,12 @@ impl Visitor {
         }
         let inline = self.o.fix_mixed_exports_with_inline_type_specifier;
         ctx.report_diagnostic_with_fixes(
-            RuleDiagnostic { pos, end, message: msg, labeled_ranges },
+            RuleDiagnostic {
+                pos,
+                end,
+                message: msg,
+                labeled_ranges,
+            },
             |ctx| {
                 if inline {
                     return report

@@ -6,8 +6,8 @@ use tsrs_checker::{Checker, Type, TypeFlags};
 use tsrs_compiler::Program;
 use tsrs_core::P;
 
-use crate::rule::{Ctx, Listener, Rule, RuleMessage, RuleVisitor, opt_bool, options_object};
-use crate::utils::{self, TypeOrValueSpecifier};
+use crate::rule::{opt_bool, options_object, Ctx, Listener, Rule, RuleMessage, RuleVisitor};
+use crate::utils::{self, pos_i32, TypeOrValueSpecifier};
 
 fn build_should_be_readonly_message() -> RuleMessage {
     RuleMessage::new("shouldBeReadonly", "Parameter should be a readonly type.")
@@ -70,10 +70,14 @@ fn is_type_readonly_array_or_tuple(
 
 fn property_has_private_identifier_name(property: P<Symbol>) -> bool {
     if let Some(value_declaration) = property.value_declaration() {
-        return value_declaration.name().is_some_and(|name| name.kind() == Kind::PrivateIdentifier);
+        return value_declaration
+            .name()
+            .is_some_and(|name| name.kind() == Kind::PrivateIdentifier);
     }
     property.declarations().iter().any(|declaration| {
-        declaration.name().is_some_and(|name| name.kind() == Kind::PrivateIdentifier)
+        declaration
+            .name()
+            .is_some_and(|name| name.kind() == Kind::PrivateIdentifier)
     })
 }
 
@@ -287,7 +291,10 @@ fn is_type_branded_literal(c: &mut Checker, t: P<Type>) -> bool {
 
 fn is_type_branded_literal_like(c: &mut Checker, t: P<Type>) -> bool {
     if utils::is_union_type(t) {
-        return t.types().iter().all(|&part| is_type_branded_literal(c, part));
+        return t
+            .types()
+            .iter()
+            .all(|&part| is_type_branded_literal(c, part));
     }
     is_type_branded_literal(c, t)
 }
@@ -296,10 +303,15 @@ fn is_parameter_property(parameter: P<Node>) -> bool {
     if !ast::is_parameter_declaration(parameter) {
         return false;
     }
-    if parameter.parent().is_none_or(|p| p.kind() != Kind::Constructor) {
+    if parameter
+        .parent()
+        .is_none_or(|p| p.kind() != Kind::Constructor)
+    {
         return false;
     }
-    parameter.modifier_flags().intersects(ModifierFlags::ParameterPropertyModifier)
+    parameter
+        .modifier_flags()
+        .intersects(ModifierFlags::ParameterPropertyModifier)
 }
 
 fn get_parameter_type(c: &mut Checker, parameter: P<Node>) -> P<Type> {
@@ -383,7 +395,7 @@ impl RuleVisitor for Visitor {
                         let name_start = ctx.trim(name).0;
                         ctx.report_range(
                             name_start,
-                            actual_parameter.end(),
+                            pos_i32(actual_parameter.end()),
                             build_should_be_readonly_message(),
                         );
                         continue;

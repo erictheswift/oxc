@@ -4,7 +4,7 @@ use tsrs_ast::{self as ast, FunctionFlags, Kind, Node};
 use tsrs_checker::{ContextFlags, Type, TypeFlags};
 use tsrs_core::P;
 
-use crate::rule::{Ctx, Listener, Rule, RuleMessage, RuleVisitor, opt_bool, options_object};
+use crate::rule::{opt_bool, options_object, Ctx, Listener, Rule, RuleMessage, RuleVisitor};
 use crate::utils;
 
 fn async_func() -> RuleMessage {
@@ -36,7 +36,9 @@ pub fn create(options: Option<&serde_json::Value>) -> Result<Box<dyn Rule>, Stri
     if opt_bool(&m, "allowReturnAny", false) {
         allowed_return_type_flags |= TypeFlags::Any;
     }
-    Ok(Box::new(StrictVoidReturn { allowed_return_type_flags }))
+    Ok(Box::new(StrictVoidReturn {
+        allowed_return_type_flags,
+    }))
 }
 
 const LISTENERS: &[Listener] = &[
@@ -222,7 +224,9 @@ impl Visitor {
                 continue;
             }
             if arg_expected_return_types.iter().any(|&t| is_void(t))
-                && arg_expected_return_types.iter().all(|&t| is_nullish_or_any(t))
+                && arg_expected_return_types
+                    .iter()
+                    .all(|&t| is_nullish_or_any(t))
             {
                 self.report_if_non_void_function(ctx, arg_node);
             }
@@ -271,7 +275,9 @@ impl Visitor {
         let Some(member_name_node) = member_node.name() else {
             return Vec::new();
         };
-        let Some(member_symbol) = ctx.checker.get_symbol_at_location_exported(member_name_node)
+        let Some(member_symbol) = ctx
+            .checker
+            .get_symbol_at_location_exported(member_name_node)
         else {
             return Vec::new();
         };
@@ -279,8 +285,9 @@ impl Visitor {
         for &heritage_clause in heritage_clauses.nodes() {
             for &heritage_type_node in heritage_clause.as_heritage_clause().types.get().nodes() {
                 let heritage_type = ctx.checker.get_type_at_location(heritage_type_node);
-                let Some(heritage_member) =
-                    ctx.checker.get_property_of_type(heritage_type, member_symbol.name())
+                let Some(heritage_member) = ctx
+                    .checker
+                    .get_property_of_type(heritage_type, member_symbol.name())
                 else {
                     continue;
                 };
@@ -295,11 +302,15 @@ impl Visitor {
     }
 
     fn check_object_method_node(&self, ctx: &mut Ctx, method_node: P<Node>) {
-        if method_node.name().is_some_and(ast::is_computed_property_name) {
+        if method_node
+            .name()
+            .is_some_and(ast::is_computed_property_name)
+        {
             return;
         }
-        let Some(obj_type) =
-            ctx.checker.get_contextual_type(method_node.parent().unwrap(), ContextFlags::None)
+        let Some(obj_type) = ctx
+            .checker
+            .get_contextual_type(method_node.parent().unwrap(), ContextFlags::None)
         else {
             return;
         };
@@ -310,8 +321,10 @@ impl Visitor {
         let Some(property_symbol) = ctx.checker.get_property_of_type(obj_type, &member_name) else {
             return;
         };
-        let expected_type =
-            ctx.checker.get_type_of_symbol_at_location(property_symbol, Some(method_node)).unwrap();
+        let expected_type = ctx
+            .checker
+            .get_type_of_symbol_at_location(property_symbol, Some(method_node))
+            .unwrap();
         if is_void_returning_function_type(ctx, expected_type) {
             self.report_if_non_void_function(ctx, method_node);
         }
@@ -322,7 +335,10 @@ impl Visitor {
             return;
         }
         let base_member_types = Self::get_base_member_types(ctx, method_node);
-        if base_member_types.into_iter().any(|t| is_void_returning_function_type(ctx, t)) {
+        if base_member_types
+            .into_iter()
+            .any(|t| is_void_returning_function_type(ctx, t))
+        {
             self.report_if_non_void_function(ctx, method_node);
         }
     }

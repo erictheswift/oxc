@@ -36,8 +36,10 @@ pub(crate) fn stats_enabled() -> bool {
 pub(crate) fn checkers() -> Option<i64> {
     static N: OnceLock<Option<i64>> = OnceLock::new();
     *N.get_or_init(|| {
-        if let Some(n) =
-            std::env::var("TSRSLINT_CHECKERS").ok().and_then(|v| v.parse().ok()).filter(|&n| n > 0)
+        if let Some(n) = std::env::var("TSRSLINT_CHECKERS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .filter(|&n| n > 0)
         {
             return Some(n);
         }
@@ -67,14 +69,22 @@ impl FileQueue {
             prefix.push(sum);
         }
         let len = files.len() as u64;
-        FileQueue { files, prefix, range: AtomicU64::new(len << 32) }
+        FileQueue {
+            files,
+            prefix,
+            range: AtomicU64::new(len << 32),
+        }
     }
 
     fn remaining(&self) -> u64 {
         // Relaxed: an estimate for choosing a queue to steal from; a stale value only changes that choice.
         let r = self.range.load(Ordering::Relaxed);
         let (front, back) = ((r & LOW) as usize, (r >> 32) as usize);
-        if front < back { self.prefix[back] - self.prefix[front] } else { 0 }
+        if front < back {
+            self.prefix[back] - self.prefix[front]
+        } else {
+            0
+        }
     }
 
     fn take(&self, front: bool) -> Option<usize> {
@@ -87,7 +97,10 @@ impl FileQueue {
             }
             let new = if front { r + 1 } else { r - (1 << 32) };
             // Relaxed: see above.
-            match self.range.compare_exchange_weak(r, new, Ordering::Relaxed, Ordering::Relaxed) {
+            match self
+                .range
+                .compare_exchange_weak(r, new, Ordering::Relaxed, Ordering::Relaxed)
+            {
                 Ok(_) => break,
                 Err(cur) => r = cur,
             }
@@ -135,7 +148,11 @@ struct Totals {
     cpu_sum: f64,
 }
 
-static TOTALS: Mutex<Totals> = Mutex::new(Totals { lint_wall: 0.0, cpu_max: 0.0, cpu_sum: 0.0 });
+static TOTALS: Mutex<Totals> = Mutex::new(Totals {
+    lint_wall: 0.0,
+    cpu_max: 0.0,
+    cpu_sum: 0.0,
+});
 
 /// Runs `lint(state, checker, i)` for every index `i` of `todo` (indices into `files`, in program order) on one
 /// thread per checker of `program`. `init` creates a thread's state before its first file and `done` gets it back.
@@ -151,7 +168,10 @@ pub(crate) fn for_each_file<S>(
     let checkers = program.checker_count();
     let mut per: Vec<Vec<u32>> = vec![Vec::new(); checkers];
     for &i in todo {
-        let c = program.checker_index_of_file(files[i]).filter(|&c| c < checkers).unwrap_or(0);
+        let c = program
+            .checker_index_of_file(files[i])
+            .filter(|&c| c < checkers)
+            .unwrap_or(0);
         per[c].push(i as u32);
     }
     let queues: Vec<FileQueue> = per
@@ -179,7 +199,12 @@ pub(crate) fn for_each_file<S>(
         }
     });
     if stats {
-        report(steal, todo.len(), start.elapsed(), &per_checker.into_inner().unwrap());
+        report(
+            steal,
+            todo.len(),
+            start.elapsed(),
+            &per_checker.into_inner().unwrap(),
+        );
     }
 }
 
@@ -245,7 +270,10 @@ fn thread_cpu_seconds() -> f64 {
     const CLOCK_THREAD_CPUTIME_ID: i32 = 16;
     #[cfg(not(target_os = "macos"))]
     const CLOCK_THREAD_CPUTIME_ID: i32 = 3;
-    let mut ts = Timespec { tv_sec: 0, tv_nsec: 0 };
+    let mut ts = Timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
     // SAFETY: clock_gettime writes one timespec through the valid pointer.
     if unsafe { clock_gettime(CLOCK_THREAD_CPUTIME_ID, &raw mut ts) } != 0 {
         return 0.0;
@@ -300,7 +328,10 @@ mod tests {
     /// printed types, tsrs notes/perf-balance.md).
     #[test]
     fn locality_keeps_own_files_in_order() {
-        let queues = vec![FileQueue::new(vec![0, 2, 4], |_| 1), FileQueue::new(vec![1, 3], |_| 1)];
+        let queues = vec![
+            FileQueue::new(vec![0, 2, 4], |_| 1),
+            FileQueue::new(vec![1, 3], |_| 1),
+        ];
         let order: Vec<(usize, bool)> = std::iter::from_fn(|| next(&queues, 0, false)).collect();
         assert_eq!(order, vec![(0, false), (2, false), (4, false)]);
         assert_eq!(queues[1].remaining(), 2);

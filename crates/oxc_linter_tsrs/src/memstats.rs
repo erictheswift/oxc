@@ -20,7 +20,9 @@ pub(crate) fn mark(phase: &str) {
     let gib = |b: u64| b as f64 / (1u64 << 30) as f64;
     let (user, sys, minflt) = rusage();
     let (now, peak, instr) = memory();
-    let instr = instr.map_or(String::new(), |i| format!("  instr {:7.1} G", i as f64 / 1e9));
+    let instr = instr.map_or(String::new(), |i| {
+        format!("  instr {:7.1} G", i as f64 / 1e9)
+    });
     eprintln!(
         "tsrslint mem [{t:7.2}s] {phase:<28} now {:6.3} GiB  peak {:6.3} GiB  user {user:6.2}s  sys {sys:6.2}s  minflt {minflt:>8}{instr}",
         gib(now),

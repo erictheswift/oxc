@@ -9,10 +9,10 @@ use tsrs_checker::{LiteralValue, Type, TypeFlags};
 use tsrs_core::P;
 
 use crate::rule::{
-    Ctx, Listener, Rule, RuleFix, RuleMessage, RuleSuggestion, RuleVisitor, opt_bool,
-    options_object,
+    opt_bool, options_object, Ctx, Listener, Rule, RuleFix, RuleMessage, RuleSuggestion,
+    RuleVisitor,
 };
-use crate::utils;
+use crate::utils::{self, pos_i32};
 
 fn build_prefer_optional_chain_message() -> RuleMessage {
     RuleMessage::new(
@@ -29,7 +29,10 @@ fn build_optional_chain_suggest_message() -> RuleMessage {
 enum OperandType {
     Invalid,
     Plain,
-    #[expect(dead_code, reason = "tsgolint never constructs OperandTypeNotEqualNull either")]
+    #[expect(
+        dead_code,
+        reason = "tsgolint never constructs OperandTypeNotEqualNull either"
+    )]
     NotEqualNull,
     NotStrictEqualNull,
     NotStrictEqualUndef,
@@ -91,7 +94,11 @@ struct Operand {
 
 impl Operand {
     fn new(typ: OperandType, node: P<Node>, compared_expr: Option<P<Node>>) -> Operand {
-        Operand { typ, node, compared_expr }
+        Operand {
+            typ,
+            node,
+            compared_expr,
+        }
     }
     fn invalid(node: P<Node>) -> Operand {
         Operand::new(OperandType::Invalid, node, None)
@@ -295,7 +302,10 @@ fn unwrap_for_comparison(mut n: P<Node>) -> P<Node> {
 }
 
 fn node_lists_equal(a: &[P<Node>], b: &[P<Node>]) -> bool {
-    a.len() == b.len() && a.iter().zip(b).all(|(&x, &y)| are_nodes_structurally_equal(x, y))
+    a.len() == b.len()
+        && a.iter()
+            .zip(b)
+            .all(|(&x, &y)| are_nodes_structurally_equal(x, y))
 }
 
 // Ignores parentheses and non-null assertions.
@@ -624,7 +634,9 @@ impl TypeInfo {
         if self.parts.is_empty() || self.is_any_or_unknown() {
             return false;
         }
-        self.parts.iter().all(|&p| utils::is_type_undefined_type(p) || utils::is_type_void_type(p))
+        self.parts
+            .iter()
+            .all(|&p| utils::is_type_undefined_type(p) || utils::is_type_void_type(p))
     }
     fn is_always_nullish_like(&self) -> bool {
         if self.parts.is_empty() || self.is_any_or_unknown() {
@@ -832,7 +844,10 @@ impl ChainProcessor {
     ) {
         if use_suggestion {
             ctx.report_node_with_suggestions(node, build_prefer_optional_chain_message(), |_| {
-                vec![RuleSuggestion { message: build_optional_chain_suggest_message(), fixes }]
+                vec![RuleSuggestion {
+                    message: build_optional_chain_suggest_message(),
+                    fixes,
+                }]
             });
         } else {
             ctx.report_node_with_fixes(node, build_prefer_optional_chain_message(), |_| fixes);
@@ -887,7 +902,11 @@ impl ChainProcessor {
             return false;
         }
 
-        let checked_expr = if is_right_nullish { bin.left } else { bin.right };
+        let checked_expr = if is_right_nullish {
+            bin.left
+        } else {
+            bin.right
+        };
         ast::is_identifier(checked_expr) || checked_expr.kind() == Kind::ThisKeyword
     }
 
@@ -1044,7 +1063,9 @@ impl ChainProcessor {
         if info.parts.is_empty() {
             return false;
         }
-        info.parts.iter().all(|&p| utils::is_type_flag_set(p, TypeFlags::Any | TypeFlags::Unknown))
+        info.parts
+            .iter()
+            .all(|&p| utils::is_type_flag_set(p, TypeFlags::Any | TypeFlags::Unknown))
     }
 
     fn would_change_return_type(&mut self, ctx: &mut Ctx, node: P<Node>) -> bool {
@@ -1172,8 +1193,7 @@ impl ChainProcessor {
     }
 
     fn flatten_len(&mut self, ctx: &Ctx, node: P<Node>) -> usize {
-        let len = self.flatten_for_fix(ctx, node).borrow().len();
-        len
+        self.flatten_for_fix(ctx, node).borrow().len()
     }
 }
 
@@ -1181,7 +1201,10 @@ fn flatten_visit(ctx: &Ctx, n: P<Node>, parent_is_non_null: bool, parts: &mut Ve
     if ast::is_parenthesized_expression(n) {
         let inner = n.as_parenthesized_expression().expression.get();
         if ast::is_await_expression(inner) || ast::is_yield_expression(inner) {
-            parts.push(ChainPart { text: node_text(ctx, n), ..Default::default() });
+            parts.push(ChainPart {
+                text: node_text(ctx, n),
+                ..Default::default()
+            });
             return;
         }
         flatten_visit(ctx, inner, parent_is_non_null, parts);
@@ -1225,7 +1248,10 @@ fn flatten_visit(ctx: &Ctx, n: P<Node>, parent_is_non_null: bool, parts: &mut Ve
         let mut type_args_text = String::new();
         if let Some(type_args) = call_expr.type_arguments() {
             if !type_args.nodes().is_empty() {
-                type_args_text = format!("<{}>", src(ctx, type_args.pos(), type_args.end()));
+                type_args_text = format!(
+                    "<{}>",
+                    src(ctx, pos_i32(type_args.pos()), pos_i32(type_args.end()))
+                );
             }
         }
 
@@ -1233,7 +1259,7 @@ fn flatten_visit(ctx: &Ctx, n: P<Node>, parent_is_non_null: bool, parts: &mut Ve
         if !call_expr.arguments.nodes().is_empty() {
             let args_start = call_expr.arguments.pos();
             let call_end = n.end();
-            args_text = format!("({})", src(ctx, args_start, call_end - 1));
+            args_text = format!("({})", src(ctx, pos_i32(args_start), pos_i32(call_end) - 1));
         }
 
         parts.push(ChainPart {
@@ -1607,7 +1633,8 @@ impl ChainProcessor {
 
     fn has_property_access_in_chain(&self, chain: &[Operand]) -> bool {
         chain.iter().any(|op| {
-            op.compared_expr.is_some_and(|e| utils::is_access_expression(ast::skip_parentheses(e)))
+            op.compared_expr
+                .is_some_and(|e| utils::is_access_expression(ast::skip_parentheses(e)))
         })
     }
 
@@ -2172,8 +2199,10 @@ impl ChainProcessor {
                     && second_parts.len() > first_parts.len()
                     && !first_parts.is_empty()
                 {
-                    let bases_match =
-                        first_parts.iter().zip(&second_parts).all(|(f, s)| f.text == s.text);
+                    let bases_match = first_parts
+                        .iter()
+                        .zip(&second_parts)
+                        .all(|(f, s)| f.text == s.text);
                     if bases_match {
                         let has_optional_in_extension =
                             second_parts[first_parts.len()..].iter().any(|p| p.optional);
@@ -2264,7 +2293,9 @@ impl ChainProcessor {
 
         let analysis = analyze_nullish_checks(guard_operands, false);
 
-        let has_typeof_check = guard_operands.iter().any(|op| op.typ == OperandType::TypeofCheck);
+        let has_typeof_check = guard_operands
+            .iter()
+            .any(|op| op.typ == OperandType::TypeofCheck);
 
         let mut has_trailing_both_check = false;
         if chain.len() >= 2
@@ -2352,22 +2383,23 @@ impl ChainProcessor {
                 let left = ast::skip_parentheses(bin_expr.left);
                 let right = ast::skip_parentheses(bin_expr.right.get());
 
-                let value =
-                    if last_op.compared_expr.is_some_and(|e| are_nodes_structurally_equal(e, left))
-                    {
-                        Some(right)
-                    } else if last_op
-                        .compared_expr
-                        .is_some_and(|e| are_nodes_structurally_equal(e, right))
-                    {
-                        Some(left)
-                    } else if utils::is_access_expression(left) {
-                        Some(right)
-                    } else if utils::is_access_expression(right) {
-                        Some(left)
-                    } else {
-                        None
-                    };
+                let value = if last_op
+                    .compared_expr
+                    .is_some_and(|e| are_nodes_structurally_equal(e, left))
+                {
+                    Some(right)
+                } else if last_op
+                    .compared_expr
+                    .is_some_and(|e| are_nodes_structurally_equal(e, right))
+                {
+                    Some(left)
+                } else if utils::is_access_expression(left) {
+                    Some(right)
+                } else if utils::is_access_expression(right) {
+                    Some(left)
+                } else {
+                    None
+                };
 
                 if let Some(value) = value {
                     if !self.is_safe_trailing_comparison_value(ctx, op, value) && !self.unsafe_ok()
@@ -2782,7 +2814,9 @@ impl ChainProcessor {
                 let is_first_simple_plain =
                     !utils::is_access_expression(ast::skip_parentheses(first_expr));
                 if is_first_simple_plain
-                    && chain[1..].iter().any(|op| op.typ == OperandType::Comparison)
+                    && chain[1..]
+                        .iter()
+                        .any(|op| op.typ == OperandType::Comparison)
                 {
                     return None;
                 }
@@ -2899,7 +2933,8 @@ impl ChainProcessor {
         }
 
         // Strict checks (=== null or === undefined) intentionally cover one - skip only when type has BOTH
-        self.get_type_info(ctx, chain[0].cexpr()).has_both_null_and_undefined()
+        self.get_type_info(ctx, chain[0].cexpr())
+            .has_both_null_and_undefined()
     }
 
     fn should_skip_or_chain_optimal_checks(&mut self, ctx: &mut Ctx, chain: &[Operand]) -> bool {
@@ -3181,13 +3216,20 @@ impl ChainProcessor {
             let mut all_op_parts: Vec<Parts> = Vec::new();
             for op in &checks_to_consider {
                 let Some(e) = op.compared_expr else { continue };
-                let expr_to_flatten = if op.typ == OperandType::Plain { op.node } else { e };
+                let expr_to_flatten = if op.typ == OperandType::Plain {
+                    op.node
+                } else {
+                    e
+                };
                 let op_parts = self.flatten_for_fix(ctx, expr_to_flatten);
                 let is_prefix = {
                     let opp = op_parts.borrow();
                     let parts = parts_rc.borrow();
                     opp.len() <= parts.len()
-                        && opp.iter().zip(parts.iter()).all(|(a, b)| a.base_text() == b.base_text())
+                        && opp
+                            .iter()
+                            .zip(parts.iter())
+                            .all(|(a, b)| a.base_text() == b.base_text())
                 };
                 if is_prefix {
                     all_op_parts.push(op_parts);
@@ -3250,7 +3292,7 @@ impl ChainProcessor {
         if chain.len() > 1 {
             let mut leading_trivia = String::new();
             for op in &chain[1..] {
-                let full_pos = op.node.pos();
+                let full_pos = pos_i32(op.node.pos());
                 let trimmed_pos = ctx.trim(op.node).0;
                 if full_pos < trimmed_pos {
                     leading_trivia.push_str(src(ctx, full_pos, trimmed_pos));
@@ -3334,13 +3376,15 @@ impl ChainProcessor {
             }
         }
 
-        let (replace_start, replace_end) = if effective_chain_start == 0
-            && chain.len() == operand_nodes.len()
-        {
-            ctx.trim(node)
-        } else {
-            (ctx.trim(chain[effective_chain_start].node).0, ctx.trim(chain[chain.len() - 1].node).1)
-        };
+        let (replace_start, replace_end) =
+            if effective_chain_start == 0 && chain.len() == operand_nodes.len() {
+                ctx.trim(node)
+            } else {
+                (
+                    ctx.trim(chain[effective_chain_start].node).0,
+                    ctx.trim(chain[chain.len() - 1].node).1,
+                )
+            };
 
         let fixes = vec![ctx.fix_replace_range(replace_start, replace_end, new_code)];
 
@@ -3464,8 +3508,11 @@ impl ChainProcessor {
         }
 
         let last_op = chain_for_optional[chain_for_optional.len() - 1];
-        let last_property_access =
-            if last_op.typ == OperandType::Plain { last_op.node } else { last_op.cexpr() };
+        let last_property_access = if last_op.typ == OperandType::Plain {
+            last_op.node
+        } else {
+            last_op.cexpr()
+        };
         let parts_rc = self.flatten_for_fix(ctx, last_property_access);
 
         let mut checked_lengths: FxHashSet<usize> = FxHashSet::default();
@@ -3525,7 +3572,7 @@ impl ChainProcessor {
                 } else {
                     let op_start = bin_expr.operator_token.pos();
                     let right_end = bin_expr.right.get().end();
-                    let comparison_text = src(ctx, op_start, right_end);
+                    let comparison_text = src(ctx, pos_i32(op_start), pos_i32(right_end));
                     new_code = format!("{optional_chain_code}{comparison_text}");
                 }
             } else {
@@ -3548,7 +3595,10 @@ impl ChainProcessor {
         let (replace_start, replace_end) = if chain.len() == operand_nodes.len() {
             ctx.trim(node)
         } else {
-            (ctx.trim(chain[0].node).0, ctx.trim(chain[chain.len() - 1].node).1)
+            (
+                ctx.trim(chain[0].node).0,
+                ctx.trim(chain[chain.len() - 1].node).1,
+            )
         };
 
         let fixes = vec![ctx.fix_replace_range(replace_start, replace_end, new_code)];
@@ -3667,13 +3717,22 @@ impl ChainProcessor {
             Some(right_node)
         } else if ast::is_parenthesized_expression(right_node) {
             let inner_expr = right_node.as_parenthesized_expression().expression.get();
-            if ast::is_object_literal_expression(inner_expr) { Some(inner_expr) } else { None }
+            if ast::is_object_literal_expression(inner_expr) {
+                Some(inner_expr)
+            } else {
+                None
+            }
         } else {
             None
         };
 
         let Some(obj_lit) = obj_lit else { return };
-        if !obj_lit.as_object_literal_expression().properties.nodes().is_empty() {
+        if !obj_lit
+            .as_object_literal_expression()
+            .properties
+            .nodes()
+            .is_empty()
+        {
             return;
         }
 
@@ -3685,7 +3744,9 @@ impl ChainProcessor {
         let access_expr = if utils::is_property_or_element_access(parent) {
             Some(parent)
         } else if ast::is_parenthesized_expression(parent) {
-            parent.parent().filter(|&gp| utils::is_property_or_element_access(gp))
+            parent
+                .parent()
+                .filter(|&gp| utils::is_property_or_element_access(gp))
         } else {
             None
         };
@@ -3697,10 +3758,18 @@ impl ChainProcessor {
         let (is_optional, is_computed, prop_node) =
             if ast::is_property_access_expression(access_expr) {
                 let parent_prop = access_expr.as_property_access_expression();
-                (parent_prop.question_dot_token().is_some(), false, parent_prop.name)
+                (
+                    parent_prop.question_dot_token().is_some(),
+                    false,
+                    parent_prop.name,
+                )
             } else {
                 let parent_elem = access_expr.as_element_access_expression();
-                (parent_elem.question_dot_token().is_some(), true, parent_elem.argument_expression)
+                (
+                    parent_elem.question_dot_token().is_some(),
+                    true,
+                    parent_elem.argument_expression,
+                )
             };
 
         if is_optional {
@@ -3743,7 +3812,12 @@ impl ChainProcessor {
             ctx.report_node_with_suggestions(
                 access_expr,
                 build_prefer_optional_chain_message(),
-                |_| vec![RuleSuggestion { message: build_optional_chain_suggest_message(), fixes }],
+                |_| {
+                    vec![RuleSuggestion {
+                        message: build_optional_chain_suggest_message(),
+                        fixes,
+                    }]
+                },
             );
         }
     }

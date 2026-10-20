@@ -11,15 +11,21 @@ use tsrs_checker::{
 use tsrs_core::P;
 
 use crate::rule::{
-    Ctx, LabeledRange, Listener, Rule, RuleDiagnostic, RuleMessage, RuleVisitor, options_object,
+    options_object, Ctx, LabeledRange, Listener, Rule, RuleDiagnostic, RuleMessage, RuleVisitor,
 };
-use crate::utils;
+use crate::utils::{self, pos_i32};
 
 fn build_always_truthy_message() -> RuleMessage {
-    RuleMessage::new("alwaysTruthy", "Unnecessary conditional, value is always truthy.")
+    RuleMessage::new(
+        "alwaysTruthy",
+        "Unnecessary conditional, value is always truthy.",
+    )
 }
 fn build_always_falsy_message() -> RuleMessage {
-    RuleMessage::new("alwaysFalsy", "Unnecessary conditional, value is always falsy.")
+    RuleMessage::new(
+        "alwaysFalsy",
+        "Unnecessary conditional, value is always falsy.",
+    )
 }
 fn build_never_message() -> RuleMessage {
     RuleMessage::new("never", "Unnecessary conditional, value is `never`.")
@@ -37,19 +43,16 @@ fn build_always_falsy_func_message() -> RuleMessage {
     )
 }
 fn build_never_nullish_message() -> RuleMessage {
-    RuleMessage::new(
-        "neverNullish",
-        "Unnecessary conditional, expected left-hand side of `??` operator to be possibly null or undefined.",
-    )
+    RuleMessage::new("neverNullish", "Unnecessary conditional, expected left-hand side of `??` operator to be possibly null or undefined.")
 }
 fn build_never_optional_chain_message() -> RuleMessage {
-    RuleMessage::new("neverOptionalChain", "Unnecessary optional chain on a non-nullish value.")
+    RuleMessage::new(
+        "neverOptionalChain",
+        "Unnecessary optional chain on a non-nullish value.",
+    )
 }
 fn build_no_strict_null_check_message() -> RuleMessage {
-    RuleMessage::new(
-        "noStrictNullCheck",
-        "This rule requires the `strictNullChecks` compiler option to be turned on to function correctly.",
-    )
+    RuleMessage::new("noStrictNullCheck", "This rule requires the `strictNullChecks` compiler option to be turned on to function correctly.")
 }
 fn build_literal_binary_expression_message() -> RuleMessage {
     RuleMessage::new(
@@ -58,7 +61,10 @@ fn build_literal_binary_expression_message() -> RuleMessage {
     )
 }
 fn build_always_nullish_message() -> RuleMessage {
-    RuleMessage::new("alwaysNullish", "Unnecessary conditional, value is always nullish.")
+    RuleMessage::new(
+        "alwaysNullish",
+        "Unnecessary conditional, value is always nullish.",
+    )
 }
 fn build_type_guard_already_is_type_message() -> RuleMessage {
     RuleMessage::new(
@@ -74,11 +80,20 @@ fn diagnostic(
     primary: Range,
     labeled_ranges: Vec<LabeledRange>,
 ) -> RuleDiagnostic {
-    RuleDiagnostic { pos: primary.0, end: primary.1, message, labeled_ranges }
+    RuleDiagnostic {
+        pos: primary.0,
+        end: primary.1,
+        message,
+        labeled_ranges,
+    }
 }
 
 fn labeled(label: String, range: Range) -> LabeledRange {
-    LabeledRange { label, pos: range.0, end: range.1 }
+    LabeledRange {
+        label,
+        pos: range.0,
+        end: range.1,
+    }
 }
 
 fn build_typed_value_diagnostic(
@@ -205,7 +220,8 @@ fn is_indeterminate_type(t: P<Type>) -> bool {
 
 /// Whether a type is always null, undefined, or void.
 fn is_always_nullish_type(t: P<Type>) -> bool {
-    t.flags().intersects(TypeFlags::Null | TypeFlags::Undefined | TypeFlags::Void)
+    t.flags()
+        .intersects(TypeFlags::Null | TypeFlags::Undefined | TypeFlags::Void)
 }
 
 /// Go LiteralType.String().
@@ -355,13 +371,16 @@ fn is_nullish_type(t: P<Type>) -> bool {
     if utils::is_union_type(t) {
         return t.types().iter().any(|&p| is_nullish_type(p));
     }
-    t.flags().intersects(TypeFlags::Null | TypeFlags::Undefined | TypeFlags::Void)
+    t.flags()
+        .intersects(TypeFlags::Null | TypeFlags::Undefined | TypeFlags::Void)
 }
 
 /// Removes null, undefined, and void from a union type; returns the first non-nullish part.
 fn remove_nullish_from_type(t: P<Type>) -> Option<P<Type>> {
     if !utils::is_union_type(t) {
-        if t.flags().intersects(TypeFlags::Null | TypeFlags::Undefined | TypeFlags::Void) {
+        if t.flags()
+            .intersects(TypeFlags::Null | TypeFlags::Undefined | TypeFlags::Void)
+        {
             return None;
         }
         return Some(t);
@@ -428,12 +447,14 @@ fn has_optional_chain(n: P<Node>) -> bool {
 fn uses_optional_chaining(expr: P<Node>) -> bool {
     let expr = ast::skip_parentheses(expr);
     match expr.kind() {
-        Kind::PropertyAccessExpression => {
-            expr.as_property_access_expression().question_dot_token().is_some()
-        }
-        Kind::ElementAccessExpression => {
-            expr.as_element_access_expression().question_dot_token().is_some()
-        }
+        Kind::PropertyAccessExpression => expr
+            .as_property_access_expression()
+            .question_dot_token()
+            .is_some(),
+        Kind::ElementAccessExpression => expr
+            .as_element_access_expression()
+            .question_dot_token()
+            .is_some(),
         Kind::CallExpression => expr.as_call_expression().question_dot_token().is_some(),
         _ => false,
     }
@@ -472,7 +493,7 @@ pub fn create(options: Option<&serde_json::Value>) -> Result<Box<dyn Rule>, Stri
             return Err(
                 "no-unnecessary-condition: failed to unmarshal options: checkTypePredicates"
                     .to_string(),
-            );
+            )
         }
     };
     Ok(Box::new(NoUnnecessaryCondition {
@@ -510,7 +531,11 @@ impl Rule for NoUnnecessaryCondition {
             ctx.report_range(0, 0, build_no_strict_null_check_message());
         }
         let no_unchecked_indexed_access = compiler_options.no_unchecked_indexed_access.is_true();
-        Box::new(Visitor { opts: self, is_strict_null_checks, no_unchecked_indexed_access })
+        Box::new(Visitor {
+            opts: self,
+            is_strict_null_checks,
+            no_unchecked_indexed_access,
+        })
     }
 }
 
@@ -614,9 +639,10 @@ impl Visitor {
             return Some(t);
         }
         let indexed_access = t.as_indexed_access_type();
-        let (Some(mut object_type), Some(mut index_type)) =
-            (indexed_access.object_type.get(), indexed_access.index_type.get())
-        else {
+        let (Some(mut object_type), Some(mut index_type)) = (
+            indexed_access.object_type.get(),
+            indexed_access.index_type.get(),
+        ) else {
             return Some(t);
         };
         if let Some(c) = ctx.checker.get_base_constraint_of_type(object_type) {
@@ -628,8 +654,9 @@ impl Visitor {
         if index_type.flags().intersects(TypeFlags::StringLiteral) && index_type.is_string_literal()
         {
             if let Some(property_name) = literal_string_value(index_type) {
-                if let Some(prop_type) =
-                    ctx.checker.get_type_of_property_of_type(object_type, property_name)
+                if let Some(prop_type) = ctx
+                    .checker
+                    .get_type_of_property_of_type(object_type, property_name)
                 {
                     return Some(prop_type);
                 }
@@ -643,13 +670,19 @@ impl Visitor {
             }
         }
         let index_parts = utils::union_type_parts(index_type);
-        if index_parts.iter().any(|p| p.flags().intersects(TypeFlags::StringLike)) {
+        if index_parts
+            .iter()
+            .any(|p| p.flags().intersects(TypeFlags::StringLike))
+        {
             let string_type = ctx.checker.string_type;
             if let Some(s) = ctx.checker.get_index_type_of_type(object_type, string_type) {
                 return Some(s);
             }
         }
-        if index_parts.iter().any(|p| p.flags().intersects(TypeFlags::NumberLike)) {
+        if index_parts
+            .iter()
+            .any(|p| p.flags().intersects(TypeFlags::NumberLike))
+        {
             let number_type = ctx.checker.number_type;
             if let Some(n) = ctx.checker.get_index_type_of_type(object_type, number_type) {
                 return Some(n);
@@ -684,7 +717,9 @@ impl Visitor {
         let Some(node_type) = self.get_resolved_type(ctx, node) else {
             return false;
         };
-        utils::union_type_parts(node_type).into_iter().any(tsrs_checker::is_tuple_type_exported)
+        utils::union_type_parts(node_type)
+            .into_iter()
+            .any(tsrs_checker::is_tuple_type_exported)
     }
 
     fn is_array_index_expression(&self, ctx: &mut Ctx, node: Option<P<Node>>) -> bool {
@@ -702,7 +737,8 @@ impl Visitor {
 
     fn is_conditional_always_necessary(&self, t: P<Type>) -> bool {
         utils::union_type_parts(t).into_iter().any(|part| {
-            part.flags().intersects(TypeFlags::Any | TypeFlags::Unknown | TypeFlags::TypeVariable)
+            part.flags()
+                .intersects(TypeFlags::Any | TypeFlags::Unknown | TypeFlags::TypeVariable)
         })
     }
 
@@ -757,8 +793,9 @@ impl Visitor {
             return false;
         }
         if let Some(property_name) = self.get_property_name_from_literal_type(property_type) {
-            if let Some(prop_type) =
-                ctx.checker.get_type_of_property_of_type(obj_type, &property_name)
+            if let Some(prop_type) = ctx
+                .checker
+                .get_type_of_property_of_type(obj_type, &property_name)
             {
                 return is_nullish_type(prop_type);
             }
@@ -776,7 +813,9 @@ impl Visitor {
     fn is_nullable_element_access_expression(&self, ctx: &mut Ctx, node: P<Node>) -> bool {
         let elem_access = node.as_element_access_expression();
         let object_type = ctx.checker.get_type_at_location(elem_access.expression);
-        let property_type = ctx.checker.get_type_at_location(elem_access.argument_expression);
+        let property_type = ctx
+            .checker
+            .get_type_at_location(elem_access.argument_expression);
         self.is_nullable_property_type(ctx, object_type, property_type)
     }
 
@@ -794,8 +833,12 @@ impl Visitor {
         // Go falls back to the callee's call signatures when getResolvedSignature returns nil; tsrs always
         // returns a signature (the unknown signature at worst), so that fallback is unreachable here.
         let resolved_signature =
-            ctx.checker.get_resolved_signature(call_expr, None, tsrs_checker::CheckMode::Normal);
-        Some(ctx.checker.get_return_type_of_signature_exported(resolved_signature))
+            ctx.checker
+                .get_resolved_signature(call_expr, None, tsrs_checker::CheckMode::Normal);
+        Some(
+            ctx.checker
+                .get_return_type_of_signature_exported(resolved_signature),
+        )
     }
 
     /// Property type from a base type given a property access expression.
@@ -815,7 +858,10 @@ impl Visitor {
             return Some(ctx.checker.get_type_at_location(prop_access));
         }
         // Try to get the property directly first
-        if let Some(prop) = ctx.checker.get_property_of_type(non_nullish_base, &prop_name) {
+        if let Some(prop) = ctx
+            .checker
+            .get_property_of_type(non_nullish_base, &prop_name)
+        {
             return Some(ctx.checker.get_type_of_symbol_exported(prop));
         }
         // For mapped types, try the apparent type which may have the property
@@ -826,13 +872,18 @@ impl Visitor {
             }
         }
         let string_type = ctx.checker.string_type;
-        let mut string_index_type =
-            ctx.checker.get_index_type_of_type(non_nullish_base, string_type);
+        let mut string_index_type = ctx
+            .checker
+            .get_index_type_of_type(non_nullish_base, string_type);
         if string_index_type.is_none() {
-            string_index_type = ctx.checker.get_index_type_of_type(apparent_type, string_type);
+            string_index_type = ctx
+                .checker
+                .get_index_type_of_type(apparent_type, string_type);
         }
         if string_index_type.is_none()
-            && non_nullish_base.object_flags().intersects(ObjectFlags::Mapped)
+            && non_nullish_base
+                .object_flags()
+                .intersects(ObjectFlags::Mapped)
         {
             let properties = ctx.checker.get_properties_of_type(non_nullish_base);
             for &p in properties {
@@ -939,7 +990,9 @@ impl Visitor {
             if property_name.is_empty() {
                 continue;
             }
-            if let Some(prop_type) = ctx.checker.get_type_of_property_of_type(part, &property_name)
+            if let Some(prop_type) = ctx
+                .checker
+                .get_type_of_property_of_type(part, &property_name)
             {
                 if is_nullish_type(prop_type) {
                     is_own_nullable = true;
@@ -1036,7 +1089,10 @@ impl Visitor {
         // Rule 1: Expression itself is unguarded element access (but not safe tuple access)
         if is_element_access(Some(expression_skipped))
             && !no_unchecked
-            && expression_skipped.as_element_access_expression().question_dot_token().is_none()
+            && expression_skipped
+                .as_element_access_expression()
+                .question_dot_token()
+                .is_none()
             && !self.is_safe_tuple_access(ctx, expression_skipped)
         {
             return;
@@ -1075,7 +1131,9 @@ impl Visitor {
                     // short-circuit undefined; remove it for non-optional mapped types.
                     expr_type = Some(ctx.checker.get_type_at_location(expression));
                     if !ctx.program.options().no_unchecked_indexed_access.is_true()
-                        && non_nullish_base.object_flags().intersects(ObjectFlags::Mapped)
+                        && non_nullish_base
+                            .object_flags()
+                            .intersects(ObjectFlags::Mapped)
                     {
                         let modifiers = tsrs_checker::get_mapped_type_modifiers(non_nullish_base);
                         if !modifiers.intersects(MappedTypeModifiers::IncludeOptional) {
@@ -1084,7 +1142,9 @@ impl Visitor {
                     }
                 }
             } else if is_element_access(Some(expression)) {
-                let arg_expr = expression.as_element_access_expression().argument_expression;
+                let arg_expr = expression
+                    .as_element_access_expression()
+                    .argument_expression;
                 let key_type = ctx.checker.get_type_at_location(arg_expr);
                 let key_flags = key_type.flags();
                 let mut is_literal_key = false;
@@ -1398,7 +1458,8 @@ impl Visitor {
                 if ctx.checker.get_property_of_type(base_type, &text).is_some() {
                     return (node_type, false);
                 }
-                ctx.checker.get_type_of_property_or_index_signature_of_type(base_type, &text)
+                ctx.checker
+                    .get_type_of_property_or_index_signature_of_type(base_type, &text)
             }
             Kind::ElementAccessExpression => {
                 let access = node.as_element_access_expression();
@@ -1421,7 +1482,10 @@ impl Visitor {
             return (node_type, false);
         };
         // Assignment-target types omit unchecked-index undefined and flow narrowing.
-        (Some(ctx.checker.get_flow_type_of_reference(node, read_type)), true)
+        (
+            Some(ctx.checker.get_flow_type_of_reference(node, read_type)),
+            true,
+        )
     }
 
     fn check_node_for_nullish(&self, ctx: &mut Ctx, node: P<Node>) {
@@ -1444,7 +1508,12 @@ impl Visitor {
         if flags.intersects(TypeFlags::Never) {
             let name = type_name_for_node_diagnostic(ctx, node_type, node);
             let r = ctx.trim(node);
-            ctx.report_diagnostic(build_typed_value_diagnostic(build_never_message(), r, r, &name));
+            ctx.report_diagnostic(build_typed_value_diagnostic(
+                build_never_message(),
+                r,
+                r,
+                &name,
+            ));
             return;
         }
         if is_always_nullish_type(node_type) {
@@ -1576,9 +1645,9 @@ impl Visitor {
             ctx.report_diagnostic(build_no_overlap_diagnostic(
                 primary,
                 &left_name,
-                (left.pos(), left.end()),
+                (pos_i32(left.pos()), pos_i32(left.end())),
                 &right_name,
-                (right.pos(), right.end()),
+                (pos_i32(right.pos()), pos_i32(right.end())),
             ));
         }
     }
@@ -1636,17 +1705,21 @@ impl Visitor {
             return;
         }
         let call_signature =
-            ctx.checker.get_resolved_signature(node, None, tsrs_checker::CheckMode::Normal);
-        let Some(type_predicate) =
-            ctx.checker.get_type_predicate_of_signature_exported(call_signature)
+            ctx.checker
+                .get_resolved_signature(node, None, tsrs_checker::CheckMode::Normal);
+        let Some(type_predicate) = ctx
+            .checker
+            .get_type_predicate_of_signature_exported(call_signature)
         else {
             return;
         };
-        let param_index = type_predicate.parameter_index.get();
-        if param_index < 0 || param_index as usize >= checkable_arguments.len() {
+        let Some(&arg) = type_predicate
+            .parameter_index
+            .get()
+            .and_then(|i| checkable_arguments.get(i))
+        else {
             return;
-        }
-        let arg = checkable_arguments[param_index as usize];
+        };
         let predicate_type = type_predicate.t.get();
         match type_predicate.kind.get() {
             TypePredicateKind::AssertsIdentifier | TypePredicateKind::Identifier => {
@@ -1689,20 +1762,27 @@ fn check_predicate_function(ctx: &mut Ctx, func_node: P<Node>, check_type_guards
     let func_type = ctx.checker.get_type_at_location(func_node);
     let signatures = utils::get_call_signatures(ctx.checker, func_type);
     for &signature in signatures {
-        let type_predicate = ctx.checker.get_type_predicate_of_signature_exported(signature);
+        let type_predicate = ctx
+            .checker
+            .get_type_predicate_of_signature_exported(signature);
         if let (true, Some(type_predicate)) = (check_type_guards, type_predicate) {
             let params = signature.parameters.get();
             if !params.is_empty() {
-                let param_index = type_predicate.parameter_index.get();
-                if param_index >= 0 && (param_index as usize) < params.len() {
-                    let param = params[param_index as usize];
+                if let Some(&param) = type_predicate
+                    .parameter_index
+                    .get()
+                    .and_then(|i| params.get(i))
+                {
                     let param_type = ctx.checker.get_type_of_symbol_exported(param);
                     let predicate_kind = type_predicate.kind.get();
                     if predicate_kind == TypePredicateKind::Identifier
                         || predicate_kind == TypePredicateKind::This
                     {
                         if let Some(predicate_type) = type_predicate.t.get() {
-                            if ctx.checker.is_type_assignable_to(param_type, predicate_type) {
+                            if ctx
+                                .checker
+                                .is_type_assignable_to(param_type, predicate_type)
+                            {
                                 let mut primary_range = ctx.trim(func_node);
                                 let mut type_range = primary_range;
                                 if let Some(declaration) = param.value_declaration() {
@@ -1729,8 +1809,9 @@ fn check_predicate_function(ctx: &mut Ctx, func_node: P<Node>, check_type_guards
 
         let mut return_type = ctx.checker.get_return_type_of_signature_exported(signature);
         if return_type.flags().intersects(TypeFlags::TypeParameter) {
-            if let Some(constraint) =
-                ctx.checker.get_constraint_of_type_parameter_exported(return_type)
+            if let Some(constraint) = ctx
+                .checker
+                .get_constraint_of_type_parameter_exported(return_type)
             {
                 return_type = constraint;
             }

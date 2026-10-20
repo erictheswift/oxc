@@ -3,13 +3,13 @@
 use rustc_hash::{FxHashMap, FxHashSet};
 use tsrs_ast::{self as ast, Kind, Node, Symbol};
 use tsrs_checker::{Checker, ObjectFlags, Signature, Type, TypeFlags};
-use tsrs_core::{P, TextRange};
+use tsrs_core::{TextRange, P};
 
 use crate::rule::{
     Ctx, LabeledRange, Listener, Rule, RuleDiagnostic, RuleFix, RuleMessage, RuleSuggestion,
     RuleVisitor,
 };
-use crate::utils;
+use crate::utils::{self, pos_i32, pos_u32};
 
 fn build_sole_message(
     type_parameter_range: (i32, i32),
@@ -46,7 +46,10 @@ fn find_type_parameter_index(type_parameters: &[P<Node>], target: P<Node>) -> Op
 
 fn is_complex_constraint(node: Option<P<Node>>) -> bool {
     node.is_some_and(|node| {
-        matches!(node.kind(), Kind::UnionType | Kind::IntersectionType | Kind::ConditionalType)
+        matches!(
+            node.kind(),
+            Kind::UnionType | Kind::IntersectionType | Kind::ConditionalType
+        )
     })
 }
 
@@ -64,7 +67,8 @@ fn symbol_from_type_parameter(ctx: &mut Ctx, type_parameter: P<Node>) -> Option<
     if !ast::is_type_parameter_declaration(type_parameter) {
         return None;
     }
-    ctx.checker.get_symbol_at_location_exported(type_parameter.as_type_parameter_declaration().name)
+    ctx.checker
+        .get_symbol_at_location_exported(type_parameter.as_type_parameter_declaration().name)
 }
 
 fn collect_type_parameter_reference_nodes(
@@ -94,7 +98,14 @@ fn collect_type_parameter_reference_nodes(
         });
     }
     let mut references = Vec::with_capacity(8);
-    walk(ctx.checker, ctx.file.get(), node, symbol, declaration_name, &mut references);
+    walk(
+        ctx.checker,
+        ctx.file.get(),
+        node,
+        symbol,
+        declaration_name,
+        &mut references,
+    );
     references.sort_by_key(|r| r.pos());
     references
 }
@@ -107,9 +118,10 @@ fn get_type_parameter_constraint_text(
     match constraint_node {
         None => ("unknown".to_string(), None),
         Some(c) if c.kind() == Kind::AnyKeyword => ("unknown".to_string(), Some(c)),
-        Some(c) => {
-            (tsrs_scanner::get_source_text_of_node_from_source_file(ctx.file, c, false), Some(c))
-        }
+        Some(c) => (
+            tsrs_scanner::get_source_text_of_node_from_source_file(ctx.file, c, false),
+            Some(c),
+        ),
     }
 }
 
@@ -119,16 +131,16 @@ fn get_type_parameter_list_removal_range(
     target_type_parameter: P<Node>,
 ) -> TextRange {
     let Some(index) = find_type_parameter_index(type_parameters, target_type_parameter) else {
-        return TextRange::new(target_type_parameter.pos(), target_type_parameter.end());
+        return target_type_parameter.loc();
     };
     let text = ctx.text().as_bytes();
     if type_parameters.len() == 1 {
         let first_type_parameter = type_parameters[0];
-        let mut start = first_type_parameter.pos() - 1;
+        let mut start = pos_i32(first_type_parameter.pos()) - 1;
         if start < 0 {
-            start = first_type_parameter.pos();
+            start = pos_i32(first_type_parameter.pos());
         }
-        let mut end = first_type_parameter.end() as usize;
+        let mut end = pos_u32(first_type_parameter.end()) as usize;
         while end < text.len() && text[end] != b'>' {
             end += 1;
         }
@@ -137,29 +149,29 @@ fn get_type_parameter_list_removal_range(
         }
         let mut end = end as i32;
         if end <= start {
-            end = first_type_parameter.end();
+            end = pos_i32(first_type_parameter.end());
         }
-        return TextRange::new(start, end);
+        return TextRange::new(start as u32, end as u32);
     }
     if index == 0 {
         let mut end = type_parameters[index + 1].pos();
-        let token_range = tsrs_scanner::get_range_of_token_at_position(ctx.file, end);
+        let token_range = tsrs_scanner::get_range_of_token_at_position(ctx.file, pos_u32(end));
         if token_range.pos() > target_type_parameter.pos() {
             end = token_range.pos();
         }
-        return TextRange::new(target_type_parameter.pos(), end);
+        return TextRange::from_text_pos(target_type_parameter.pos(), end);
     }
-    let prev_end = type_parameters[index - 1].end();
+    let prev_end = pos_u32(type_parameters[index - 1].end());
     let mut start = prev_end;
     let mut i = prev_end;
-    while i < target_type_parameter.pos() && (i as usize) < text.len() {
+    while i < pos_u32(target_type_parameter.pos()) && (i as usize) < text.len() {
         if text[i as usize] == b',' {
             start = i;
             break;
         }
         i += 1;
     }
-    TextRange::new(start, target_type_parameter.end())
+    TextRange::new(start, pos_u32(target_type_parameter.end()))
 }
 
 fn class_members(node: P<Node>) -> &'static [P<Node>] {
@@ -236,19 +248,21 @@ fn count_type_parameter_usage(
 const MAX_INT: i32 = i32::MAX;
 
 fn get_start_of_body(node: P<Node>) -> i32 {
-    let type_end = |n: P<Node>| n.type_node().map(|t| t.end());
+    let type_end = |n: P<Node>| n.type_node().map(|t| pos_i32(t.end()));
     let r = match node.kind() {
-        Kind::ClassDeclaration | Kind::ClassExpression => node.member_list().map(|m| m.pos()),
+        Kind::ClassDeclaration | Kind::ClassExpression => {
+            node.member_list().map(|m| pos_i32(m.pos()))
+        }
         Kind::FunctionDeclaration | Kind::FunctionExpression | Kind::MethodDeclaration => {
             match node.body() {
-                Some(body) => Some(body.pos()),
+                Some(body) => Some(pos_i32(body.pos())),
                 None => type_end(node),
             }
         }
         Kind::ArrowFunction => match node.body() {
             // Returned function signatures contribute to the inferred return type.
             Some(body) if ast::is_function_like(body) => Some(MAX_INT),
-            Some(body) => Some(body.pos()),
+            Some(body) => Some(pos_i32(body.pos())),
             None => type_end(node),
         },
         Kind::CallSignature
@@ -273,7 +287,7 @@ fn is_type_parameter_repeated_in_ast(
             continue;
         }
         // References in the body don't count for fast-path usage checks.
-        if reference.pos() > start_of_body {
+        if pos_i32(reference.pos()) > start_of_body {
             continue;
         }
         total += 1;
@@ -303,7 +317,11 @@ impl UsageCollector<'_> {
         if !self.target_symbols.contains(&symbol) {
             return;
         }
-        let current = self.found_identifier_usages.get(&symbol).copied().unwrap_or(0);
+        let current = self
+            .found_identifier_usages
+            .get(&symbol)
+            .copied()
+            .unwrap_or(0);
         if current > 2 {
             return;
         }
@@ -427,8 +445,18 @@ impl UsageCollector<'_> {
         let flags = t.flags();
         if flags.intersects(TypeFlags::IndexedAccess) {
             let indexed_access_type = t.as_indexed_access_type();
-            self.visit_type(c, indexed_access_type.object_type(), assume_multiple_uses, false);
-            self.visit_type(c, indexed_access_type.index_type(), assume_multiple_uses, false);
+            self.visit_type(
+                c,
+                indexed_access_type.object_type(),
+                assume_multiple_uses,
+                false,
+            );
+            self.visit_type(
+                c,
+                indexed_access_type.index_type(),
+                assume_multiple_uses,
+                false,
+            );
             return;
         }
         if flags.intersects(TypeFlags::Object)
@@ -465,8 +493,18 @@ impl UsageCollector<'_> {
         }
         if flags.intersects(TypeFlags::Conditional) {
             let conditional_type = t.as_conditional_type();
-            self.visit_type(c, conditional_type.check_type.get(), assume_multiple_uses, false);
-            self.visit_type(c, conditional_type.extends_type.get(), assume_multiple_uses, false);
+            self.visit_type(
+                c,
+                conditional_type.check_type.get(),
+                assume_multiple_uses,
+                false,
+            );
+            self.visit_type(
+                c,
+                conditional_type.extends_type.get(),
+                assume_multiple_uses,
+                false,
+            );
             return;
         }
         if utils::is_object_type(t) {
@@ -587,7 +625,11 @@ fn check_no_unnecessary_type_parameters_node(ctx: &mut Ctx, node: P<Node>, descr
         if identifier_count > 2 {
             continue;
         }
-        let uses = if identifier_count == 1 { "never used" } else { "used only once" };
+        let uses = if identifier_count == 1 {
+            "never used"
+        } else {
+            "used only once"
+        };
         let type_parameter_name = candidate.name_node.text();
         let (constraint_text, constraint_node) =
             get_type_parameter_constraint_text(ctx, candidate.node);
@@ -608,8 +650,8 @@ fn check_no_unnecessary_type_parameters_node(ctx: &mut Ctx, node: P<Node>, descr
             let mut fixes: Vec<RuleFix> = Vec::with_capacity(candidate.references.len() + 1);
             for &reference in &candidate.references {
                 let reference_range = ctx.trim(reference);
-                if reference_range.0 < removal_range.end()
-                    && reference_range.1 > removal_range.pos()
+                if reference_range.0 < pos_i32(removal_range.end())
+                    && reference_range.1 > pos_i32(removal_range.pos())
                 {
                     continue;
                 }
@@ -619,8 +661,13 @@ fn check_no_unnecessary_type_parameters_node(ctx: &mut Ctx, node: P<Node>, descr
                 }
                 fixes.push(ctx.fix_replace(reference, replacement));
             }
-            fixes.push(ctx.fix_remove_range(removal_range.pos(), removal_range.end()));
-            vec![RuleSuggestion { message: build_replace_usages_with_constraint_message(), fixes }]
+            fixes.push(
+                ctx.fix_remove_range(pos_i32(removal_range.pos()), pos_i32(removal_range.end())),
+            );
+            vec![RuleSuggestion {
+                message: build_replace_usages_with_constraint_message(),
+                fixes,
+            }]
         });
     }
 }

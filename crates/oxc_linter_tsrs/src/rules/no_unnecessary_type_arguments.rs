@@ -6,7 +6,7 @@ use tsrs_checker::{CheckMode, Checker, ObjectFlags, Type};
 use tsrs_core::P;
 
 use crate::rule::{Ctx, Listener, Rule, RuleMessage, RuleVisitor};
-use crate::utils;
+use crate::utils::{self, pos_i32, pos_u32};
 
 fn build_unnecessary_type_parameter_message() -> RuleMessage {
     RuleMessage::new(
@@ -40,7 +40,10 @@ fn get_type_for_comparison(c: &mut Checker, t: P<Type>) -> TypeForComparison {
             type_arguments: c.get_type_arguments(t),
         };
     }
-    TypeForComparison { type_value: Some(t), type_arguments: &[] }
+    TypeForComparison {
+        type_value: Some(t),
+        type_arguments: &[],
+    }
 }
 
 pub struct NoUnnecessaryTypeArguments;
@@ -247,15 +250,25 @@ fn check_args_and_parameters(
         return;
     }
 
-    ctx.report_node_with_fixes(type_argument, build_unnecessary_type_parameter_message(), |ctx| {
-        let (pos, end) = if last_param_index == 0 {
-            let r = tsrs_scanner::get_range_of_token_at_position(ctx.file, arguments.end());
-            (arguments.pos() - 1, r.end())
-        } else {
-            (args[last_param_index - 1].end(), type_argument.end())
-        };
-        vec![ctx.fix_remove_range(pos, end)]
-    });
+    ctx.report_node_with_fixes(
+        type_argument,
+        build_unnecessary_type_parameter_message(),
+        |ctx| {
+            let (pos, end) = if last_param_index == 0 {
+                let r = tsrs_scanner::get_range_of_token_at_position(
+                    ctx.file,
+                    pos_u32(arguments.end()),
+                );
+                (pos_i32(arguments.pos()) - 1, pos_i32(r.end()))
+            } else {
+                (
+                    pos_i32(args[last_param_index - 1].end()),
+                    pos_i32(type_argument.end()),
+                )
+            };
+            vec![ctx.fix_remove_range(pos, end)]
+        },
+    );
 }
 
 impl RuleVisitor for Visitor {

@@ -6,10 +6,10 @@ use tsrs_checker::{Type, TypeFlags};
 use tsrs_core::P;
 
 use crate::rule::{
-    Ctx, Listener, Rule, RuleFix, RuleMessage, RuleSuggestion, RuleVisitor, opt_bool,
-    options_object,
+    opt_bool, options_object, Ctx, Listener, Rule, RuleFix, RuleMessage, RuleSuggestion,
+    RuleVisitor,
 };
-use crate::utils;
+use crate::utils::{self, pos_u32};
 
 fn build_no_strict_null_check_message() -> RuleMessage {
     RuleMessage::new(
@@ -42,7 +42,10 @@ fn build_prefer_nullish_over_assignment_message() -> RuleMessage {
 }
 
 fn build_suggest_nullish_coalescing_message() -> RuleMessage {
-    RuleMessage::new("suggestNullishCoalescing", "Change to the nullish coalescing operator.")
+    RuleMessage::new(
+        "suggestNullishCoalescing",
+        "Change to the nullish coalescing operator.",
+    )
 }
 
 /// The operator used in nullish checks (Go NullishCheckOperator; None is "").
@@ -91,8 +94,10 @@ fn is_node_equal(a: Option<P<Node>>, b: Option<P<Node>>) -> bool {
         Kind::ElementAccessExpression => {
             let a_elem = a.as_element_access_expression();
             let b_elem = b.as_element_access_expression();
-            is_node_equal(Some(a_elem.argument_expression), Some(b_elem.argument_expression))
-                && is_node_equal(Some(a_elem.expression), Some(b_elem.expression))
+            is_node_equal(
+                Some(a_elem.argument_expression),
+                Some(b_elem.argument_expression),
+            ) && is_node_equal(Some(a_elem.expression), Some(b_elem.expression))
         }
         Kind::NullKeyword => true,
         Kind::StringLiteral | Kind::NoSubstitutionTemplateLiteral => a.text() == b.text(),
@@ -378,7 +383,9 @@ fn is_nullable_type(t: P<Type>) -> bool {
     if utils::is_type_flag_set(t, TypeFlags::Any | TypeFlags::Unknown) {
         return true;
     }
-    utils::union_type_parts(t).into_iter().any(|part| part.flags().intersects(TypeFlags::Nullable))
+    utils::union_type_parts(t)
+        .into_iter()
+        .any(|part| part.flags().intersects(TypeFlags::Nullable))
 }
 
 /// Go getOperatorAndNodesInsideTestExpression; None stands for the ("", nil) result.
@@ -415,16 +422,16 @@ fn get_operator_and_nodes_inside_test_expression(
         let right = ast::skip_parentheses(bin.right.get());
         match bin.operator_token.kind() {
             Kind::EqualsEqualsToken => {
-                return Some((NullishCheckOperator::Equal, vec![left, right]));
+                return Some((NullishCheckOperator::Equal, vec![left, right]))
             }
             Kind::ExclamationEqualsToken => {
-                return Some((NullishCheckOperator::NotEqual, vec![left, right]));
+                return Some((NullishCheckOperator::NotEqual, vec![left, right]))
             }
             Kind::EqualsEqualsEqualsToken => {
-                return Some((NullishCheckOperator::StrictEqual, vec![left, right]));
+                return Some((NullishCheckOperator::StrictEqual, vec![left, right]))
             }
             Kind::ExclamationEqualsEqualsToken => {
-                return Some((NullishCheckOperator::NotStrictEq, vec![left, right]));
+                return Some((NullishCheckOperator::NotStrictEq, vec![left, right]))
             }
             Kind::BarBarToken | Kind::AmpersandAmpersandToken => {
                 // Compound check like (a === null || a === undefined)
@@ -545,7 +552,7 @@ fn is_mixed_logical_expression(node: P<Node>) -> bool {
 }
 
 fn node_text(ctx: &Ctx, node: P<Node>) -> &'static str {
-    &ctx.text()[node.pos() as usize..node.end() as usize]
+    &ctx.text()[pos_u32(node.pos()) as usize..pos_u32(node.end()) as usize]
 }
 
 impl Visitor {
@@ -731,7 +738,10 @@ impl Visitor {
                 let new_operator = if is_or { "??" } else { "??=" };
                 fixes.push(ctx.fix_replace(bin.operator_token, new_operator));
 
-                vec![RuleSuggestion { message: build_suggest_nullish_coalescing_message(), fixes }]
+                vec![RuleSuggestion {
+                    message: build_suggest_nullish_coalescing_message(),
+                    fixes,
+                }]
             },
         );
     }

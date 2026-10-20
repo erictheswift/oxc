@@ -14,17 +14,21 @@ fn build_unsafe_argument_message(sender: &str, receiver: &str) -> RuleMessage {
     )
 }
 fn build_unsafe_array_spread_message(sender: &str) -> RuleMessage {
-    RuleMessage::new("unsafeArraySpread", format!("Unsafe spread of an {sender} array type."))
+    RuleMessage::new(
+        "unsafeArraySpread",
+        format!("Unsafe spread of an {sender} array type."),
+    )
 }
 fn build_unsafe_spread_message(sender: &str) -> RuleMessage {
-    RuleMessage::new("unsafeSpread", format!("Unsafe spread of an {sender} type."))
+    RuleMessage::new(
+        "unsafeSpread",
+        format!("Unsafe spread of an {sender} type."),
+    )
 }
 fn build_unsafe_tuple_spread_message(sender: &str, receiver: &str) -> RuleMessage {
     RuleMessage::new(
         "unsafeTupleSpread",
-        format!(
-            "Unsafe spread of a tuple type. The argument is {sender} and is assigned to a parameter of type {receiver}."
-        ),
+        format!("Unsafe spread of a tuple type. The argument is {sender} and is assigned to a parameter of type {receiver}."),
     )
 }
 
@@ -99,7 +103,9 @@ impl FunctionSignature {
                 type_arguments: &[],
             };
             if let Some(rest_param) = self.rest_param {
-                let t = c.get_type_of_symbol_at_location(rest_param, Some(self.node)).unwrap();
+                let t = c
+                    .get_type_of_symbol_at_location(rest_param, Some(self.node))
+                    .unwrap();
                 if c.is_array_type(t) {
                     rest_t.kind = RestTypeKind::Array;
                     rest_t.t = Some(c.get_type_arguments(t)[0]);
@@ -245,8 +251,9 @@ fn check_unsafe_arguments(ctx: &mut Ctx, args: &[P<Node>], callee: P<Node>, node
         match argument.kind() {
             // spreads consume
             Kind::SpreadElement => {
-                let spread_arg_type =
-                    ctx.checker.get_type_at_location(argument.expression().unwrap());
+                let spread_arg_type = ctx
+                    .checker
+                    .get_type_at_location(argument.expression().unwrap());
                 if utils::is_type_any_type(spread_arg_type) {
                     // foo(...any)
                     let d = describe_type(ctx.checker, spread_arg_type);

@@ -15,8 +15,10 @@ pub fn create(_options: Option<&serde_json::Value>) -> Result<Box<dyn Rule>, Str
     Ok(Box::new(PreferReturnThisType))
 }
 
-const LISTENERS: &[Listener] =
-    &[Listener::Enter(Kind::PropertyDeclaration), Listener::Enter(Kind::MethodDeclaration)];
+const LISTENERS: &[Listener] = &[
+    Listener::Enter(Kind::PropertyDeclaration),
+    Listener::Enter(Kind::MethodDeclaration),
+];
 
 impl Rule for PreferReturnThisType {
     fn name(&self) -> &'static str {

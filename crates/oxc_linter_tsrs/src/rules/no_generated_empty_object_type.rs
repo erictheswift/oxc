@@ -13,8 +13,10 @@ pub fn create(_options: Option<&serde_json::Value>) -> Result<Box<dyn Rule>, Str
     Ok(Box::new(NoGeneratedEmptyObjectType))
 }
 
-const LISTENERS: &[Listener] =
-    &[Listener::Enter(Kind::IntersectionType), Listener::Enter(Kind::TypeReference)];
+const LISTENERS: &[Listener] = &[
+    Listener::Enter(Kind::IntersectionType),
+    Listener::Enter(Kind::TypeReference),
+];
 
 impl Rule for NoGeneratedEmptyObjectType {
     fn name(&self) -> &'static str {

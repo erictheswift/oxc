@@ -2,10 +2,10 @@
 
 use tsrs_ast::{self as ast, Kind, Node, NodeList};
 use tsrs_checker::{Type, TypeFlags};
-use tsrs_core::{P, TextRange, jsnum};
+use tsrs_core::{jsnum, TextRange, P};
 
 use crate::rule::{Ctx, Listener, Rule, RuleDiagnostic, RuleFix, RuleMessage, RuleVisitor};
-use crate::utils;
+use crate::utils::{self, pos_i32, pos_u32};
 
 fn build_no_unnecessary_template_expression_message() -> RuleMessage {
     RuleMessage::new(
@@ -95,8 +95,10 @@ pub fn create(_options: Option<&serde_json::Value>) -> Result<Box<dyn Rule>, Str
     Ok(Box::new(NoUnnecessaryTemplateExpression))
 }
 
-const LISTENERS: &[Listener] =
-    &[Listener::Enter(Kind::TemplateExpression), Listener::Enter(Kind::TemplateLiteralType)];
+const LISTENERS: &[Listener] = &[
+    Listener::Enter(Kind::TemplateExpression),
+    Listener::Enter(Kind::TemplateLiteralType),
+];
 
 impl Rule for NoUnnecessaryTemplateExpression {
     fn name(&self) -> &'static str {
@@ -122,8 +124,8 @@ fn report_single_interpolation(
 ) {
     ctx.report_diagnostic_with_fixes(
         RuleDiagnostic {
-            pos: interpolation.pos() - 2,
-            end: span_literal.pos() + 1,
+            pos: pos_i32(interpolation.pos()) - 2,
+            end: pos_i32(span_literal.pos()) + 1,
             message: build_no_unnecessary_template_expression_message(),
             labeled_ranges: Vec::new(),
         },
@@ -158,10 +160,13 @@ fn is_unnecessary_value_interpolation(
 ) -> bool {
     if utils::has_comments_in_range(
         ctx.file,
-        TextRange::new(prev_quasi_end, next_quasi_literal.pos()),
+        TextRange::new(prev_quasi_end as u32, pos_u32(next_quasi_literal.pos())),
     ) || utils::has_comments_in_range(
         ctx.file,
-        TextRange::new(next_quasi_literal.pos(), ctx.trim(next_quasi_literal).0),
+        TextRange::new(
+            pos_u32(next_quasi_literal.pos()),
+            ctx.trim(next_quasi_literal).0 as u32,
+        ),
     ) {
         return false;
     }
@@ -235,17 +240,22 @@ fn is_trivial_interpolation(
         && first_span_literal.text().is_empty()
         && !utils::has_comments_in_range(
             ctx.file,
-            TextRange::new(head.end(), first_span_literal.pos()),
+            TextRange::from_text_pos(head.end(), first_span_literal.pos()),
         )
         && !utils::has_comments_in_range(
             ctx.file,
-            TextRange::new(first_span_literal.pos(), ctx.trim(first_span_literal).0),
+            TextRange::new(
+                pos_u32(first_span_literal.pos()),
+                ctx.trim(first_span_literal).0 as u32,
+            ),
         )
 }
 
 fn is_enum_member_type(t: P<Type>) -> bool {
     utils::type_recurser(t, &mut |t| {
-        t.symbol().and_then(|s| s.value_declaration()).is_some_and(ast::is_enum_member)
+        t.symbol()
+            .and_then(|s| s.value_declaration())
+            .is_some_and(ast::is_enum_member)
     })
 }
 
@@ -264,7 +274,11 @@ fn check_template_spans(ctx: &mut Ctx, template_spans: P<NodeList>, head: P<Node
     let spans = template_spans.nodes();
     for i in (0..spans.len()).rev() {
         let span = spans[i];
-        let prev_quasi_end = if i == 0 { head.end() } else { spans[i - 1].end() };
+        let prev_quasi_end = pos_i32(if i == 0 {
+            head.end()
+        } else {
+            spans[i - 1].end()
+        });
         let (expr, literal) = span_parts(span);
         if !is_unnecessary_value_interpolation(ctx, expr, prev_quasi_end, literal) {
             continue;
@@ -304,7 +318,11 @@ fn check_template_spans(ctx: &mut Ctx, template_spans: P<NodeList>, head: P<Node
         } else {
             next_character_is_opening_curly_brace = false;
         }
-        let prev_raw = if i == 0 { head.raw_text() } else { span_parts(spans[i - 1]).1.raw_text() };
+        let prev_raw = if i == 0 {
+            head.raw_text()
+        } else {
+            span_parts(spans[i - 1]).1.raw_text()
+        };
         if next_character_is_opening_curly_brace && ends_with_unescaped_dollar_sign(prev_raw) {
             fixes.push(ctx.fix_replace_range(prev_quasi_end - 3, prev_quasi_end - 2, "\\$"));
         }

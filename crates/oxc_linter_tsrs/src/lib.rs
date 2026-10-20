@@ -1,8 +1,6 @@
-//! Type-aware lint rules for oxlint: a port of tsgolint (oxc-project/tsgolint, MIT) on tsrs, the Rust port of
-//! the TypeScript 7 checker. `oxc_linter`'s `tsrs` feature links this crate and runs it in-process through
-//! `linter::spawn`; `protocol` keeps tsgolint's headless payload and message types, which `oxc_linter` already
-//! speaks, so the rules, the file -> tsconfig assignment and the programs are the same as with the `tsgolint`
-//! subprocess. The port came from tsrslint, a standalone drop-in `tsgolint` binary.
+//! tsrslint: a Rust port of tsgolint (oxc-project/tsgolint, MIT) that runs type-aware lint rules on
+//! top of tsrs, the Rust port of the TypeScript 7 checker. It speaks tsgolint's headless protocol, so
+//! oxlint can use it as a drop-in `tsgolint` binary through `OXLINT_TSGOLINT_PATH`.
 
 #[cfg(target_os = "macos")]
 mod boundedfs;

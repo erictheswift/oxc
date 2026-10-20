@@ -8,7 +8,7 @@ use crate::rule::{
     Ctx, LabeledRange, Listener, Rule, RuleDiagnostic, RuleFix, RuleMessage, RuleSuggestion,
     RuleVisitor,
 };
-use crate::utils;
+use crate::utils::{self, pos_i32};
 
 const BIG_INT_CONVERSION_BUILTINS: &[&str] = &["BigInt", "BigIntConstructor"];
 const BOOLEAN_CONVERSION_BUILTINS: &[&str] = &["Boolean", "BooleanConstructor"];
@@ -70,7 +70,9 @@ impl Rule for NoUnnecessaryTypeConversion {
 struct Visitor;
 
 fn does_underlying_type_match_flag(t: P<Type>, type_flag: TypeFlags) -> bool {
-    utils::union_type_parts(t).into_iter().all(|part| utils::is_type_flag_set(part, type_flag))
+    utils::union_type_parts(t)
+        .into_iter()
+        .all(|part| utils::is_type_flag_set(part, type_flag))
 }
 
 fn is_empty_string_literal(node: P<Node>) -> bool {
@@ -82,7 +84,8 @@ fn is_enum_type(t: P<Type>) -> bool {
 }
 
 fn is_enum_member_type(t: P<Type>) -> bool {
-    t.symbol().is_some_and(|s| s.flags.get().intersects(SymbolFlags::EnumMember))
+    t.symbol()
+        .is_some_and(|s| s.flags.get().intersects(SymbolFlags::EnumMember))
 }
 
 fn is_all_number_literal_integers(t: P<Type>) -> bool {
@@ -211,7 +214,7 @@ fn report_binary_plus(ctx: &mut Ctx, node: P<Node>) {
         if does_underlying_type_match_flag(left_type, TypeFlags::StringLike) {
             let type_string = utils::type_to_string(ctx.checker, left_type);
             let d = build_unnecessary_type_conversion_diagnostic(
-                (left.end(), node.end()),
+                (pos_i32(left.end()), pos_i32(node.end())),
                 ctx.trim(left),
                 &type_string,
             );
@@ -263,7 +266,10 @@ fn report_plus_equals(ctx: &mut Ctx, node: P<Node>) {
         };
         let satisfies = |code: &[String]| format!("{} satisfies string", code[0]);
         vec![
-            RuleSuggestion { message: build_suggest_remove_message(), fixes: vec![remove_fix] },
+            RuleSuggestion {
+                message: build_suggest_remove_message(),
+                fixes: vec![remove_fix],
+            },
             RuleSuggestion {
                 message: build_suggest_satisfies_message(),
                 fixes: vec![build_wrapping_fix(ctx, node, &[left], Some(&satisfies))],
@@ -327,7 +333,7 @@ fn report_string_to_string_call(ctx: &mut Ctx, node: P<Node>) {
     }
     let type_string = utils::type_to_string(ctx.checker, object_type);
     let d = build_unnecessary_type_conversion_diagnostic(
-        (name.pos(), node.end()),
+        (pos_i32(name.pos()), pos_i32(node.end())),
         ctx.trim(object),
         &type_string,
     );

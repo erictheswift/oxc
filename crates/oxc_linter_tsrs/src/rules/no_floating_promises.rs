@@ -5,10 +5,10 @@ use tsrs_checker::{Signature, Type};
 use tsrs_core::P;
 
 use crate::rule::{
-    Ctx, LabeledRange, Listener, Rule, RuleDiagnostic, RuleFix, RuleMessage, RuleSuggestion,
-    RuleVisitor, opt_bool, options_object,
+    opt_bool, options_object, Ctx, LabeledRange, Listener, Rule, RuleDiagnostic, RuleFix,
+    RuleMessage, RuleSuggestion, RuleVisitor,
 };
-use crate::utils;
+use crate::utils::{self, pos_i32, pos_u32};
 
 const MESSAGE_BASE: &str = "Promises must be awaited, add await operator.";
 const MESSAGE_BASE_HELP: &str = "The promise must end with a call to .catch, or end with a call to .then with a rejection handler.";
@@ -116,13 +116,17 @@ fn is_higher_precedence_than_unary(node: P<Node>) -> bool {
 impl Visitor {
     fn add_await(&self, ctx: &Ctx, expression: P<Node>, statement: P<Node>) -> Vec<RuleFix> {
         if ast::is_void_expression(expression) {
-            let r = tsrs_scanner::get_range_of_token_at_position(ctx.file, expression.pos());
-            return vec![ctx.fix_replace_range(r.pos(), r.end(), "await")];
+            let r =
+                tsrs_scanner::get_range_of_token_at_position(ctx.file, pos_u32(expression.pos()));
+            return vec![ctx.fix_replace_range(pos_i32(r.pos()), pos_i32(r.end()), "await")];
         }
         if is_higher_precedence_than_unary(statement.expression().unwrap()) {
             return vec![ctx.fix_insert_before(statement, "await ")];
         }
-        vec![ctx.fix_insert_before(statement, "await ("), ctx.fix_insert_after(expression, ")")]
+        vec![
+            ctx.fix_insert_before(statement, "await ("),
+            ctx.fix_insert_after(expression, ")"),
+        ]
     }
 
     fn has_matching_signature(
@@ -141,7 +145,10 @@ impl Visitor {
     }
 
     fn is_function_param(ctx: &mut Ctx, param: P<tsrs_ast::Symbol>, node: P<Node>) -> bool {
-        let at = ctx.checker.get_type_of_symbol_at_location(param, Some(node)).unwrap();
+        let at = ctx
+            .checker
+            .get_type_of_symbol_at_location(param, Some(node))
+            .unwrap();
         let t = ctx.checker.get_apparent_type(at);
         utils::union_type_parts(t)
             .into_iter()
@@ -169,7 +176,10 @@ impl Visitor {
             let Some(then) = ctx.checker.get_property_of_type(part, "then") else {
                 continue;
             };
-            let then_type = ctx.checker.get_type_of_symbol_at_location(then, Some(node)).unwrap();
+            let then_type = ctx
+                .checker
+                .get_type_of_symbol_at_location(then, Some(node))
+                .unwrap();
             if Self::has_matching_signature(ctx, then_type, &mut |ctx, sig| {
                 let params = sig.parameters.get();
                 params.len() >= 2
@@ -250,7 +260,12 @@ impl Visitor {
         }
         let t = ctx.checker.get_type_at_location(node);
         if self.is_promise_array(ctx, node, t) {
-            return Some(Unhandled { node, t, promise_array: true, non_function_handler: None });
+            return Some(Unhandled {
+                node,
+                t,
+                promise_array: true,
+                non_function_handler: None,
+            });
         }
         if ast::is_await_expression(node) {
             return None;
@@ -308,7 +323,12 @@ impl Visitor {
                     return Some(r);
                 }
             }
-            return Some(Unhandled { node, t, promise_array: false, non_function_handler: None });
+            return Some(Unhandled {
+                node,
+                t,
+                promise_array: false,
+                non_function_handler: None,
+            });
         }
         if node.kind() == Kind::ConditionalExpression {
             let e = node.as_conditional_expression();
@@ -324,7 +344,12 @@ impl Visitor {
             }
             return self.is_unhandled_promise(ctx, e.right.get());
         }
-        Some(Unhandled { node, t, promise_array: false, non_function_handler: None })
+        Some(Unhandled {
+            node,
+            t,
+            promise_array: false,
+            non_function_handler: None,
+        })
     }
 
     fn build_diagnostic(ctx: &mut Ctx, result: &Unhandled, message: RuleMessage) -> RuleDiagnostic {
@@ -350,7 +375,12 @@ impl Visitor {
                 end: he,
             });
         }
-        RuleDiagnostic { pos, end, message, labeled_ranges: labels }
+        RuleDiagnostic {
+            pos,
+            end,
+            message,
+            labeled_ranges: labels,
+        }
     }
 }
 
@@ -398,7 +428,10 @@ impl RuleVisitor for Visitor {
                     ]
                 };
                 vec![
-                    RuleSuggestion { message: floating_fix_void(), fixes: void_fixes },
+                    RuleSuggestion {
+                        message: floating_fix_void(),
+                        fixes: void_fixes,
+                    },
                     RuleSuggestion {
                         message: floating_fix_await(),
                         fixes: self.add_await(ctx, expression, node),

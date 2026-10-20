@@ -8,7 +8,7 @@ use crate::rule::{
     Ctx, LabeledRange, Listener, Rule, RuleDiagnostic, RuleFix, RuleMessage, RuleSuggestion,
     RuleVisitor,
 };
-use crate::utils;
+use crate::utils::{self, pos_i32};
 
 fn build_no_strict_null_check_message() -> RuleMessage {
     RuleMessage::new(
@@ -28,9 +28,7 @@ fn build_prefer_optional_syntax_message() -> RuleMessage {
 fn build_useless_default_assignment_message(assignment_type: &str) -> RuleMessage {
     RuleMessage::with_help(
         "uselessDefaultAssignment",
-        format!(
-            "Default value is useless because the {assignment_type} is not nullish. This default assignment will never be used."
-        ),
+        format!("Default value is useless because the {assignment_type} is not nullish. This default assignment will never be used."),
         "Remove the default assignment",
     )
 }
@@ -41,9 +39,7 @@ fn build_useless_default_assignment_with_type_message(
 ) -> RuleMessage {
     RuleMessage::with_help(
         "uselessDefaultAssignment",
-        format!(
-            "Default value is useless because the {assignment_type} has type `{type_text}` (not nullish). This default assignment will never be used."
-        ),
+        format!("Default value is useless because the {assignment_type} has type `{type_text}` (not nullish). This default assignment will never be used."),
         "Remove the default assignment",
     )
 }
@@ -55,9 +51,7 @@ fn build_remove_default_assignment_suggestion_message() -> RuleMessage {
 fn build_useless_undefined_message(plural_assignment_type: &str) -> RuleMessage {
     RuleMessage::with_help(
         "uselessUndefined",
-        format!(
-            "Default value is useless because it is undefined. Optional {plural_assignment_type} are already undefined by default."
-        ),
+        format!("Default value is useless because it is undefined. Optional {plural_assignment_type} are already undefined by default."),
         "Remove the default assignment",
     )
 }
@@ -67,7 +61,9 @@ fn can_be_undefined(t: Option<P<Type>>) -> bool {
     if utils::is_type_any_type(t) || utils::is_type_unknown_type(t) {
         return true;
     }
-    utils::union_type_parts(t).into_iter().any(utils::is_type_undefined_type)
+    utils::union_type_parts(t)
+        .into_iter()
+        .any(utils::is_type_undefined_type)
 }
 
 fn get_property_name(node: Option<P<Node>>) -> Option<&'static str> {
@@ -99,24 +95,27 @@ fn get_array_element_type(
 }
 
 fn find_node_index(nodes: &[P<Node>], target: P<Node>) -> i32 {
-    nodes.iter().position(|&n| n == target).map_or(-1, |i| i as i32)
+    nodes
+        .iter()
+        .position(|&n| n == target)
+        .map_or(-1, |i| i as i32)
 }
 
 fn get_default_assignment_start(node: P<Node>) -> i32 {
     if ast::is_parameter_declaration(node) {
         if let Some(t) = node.type_node() {
-            return t.end();
+            return pos_i32(t.end());
         }
         if let Some(name) = node.name() {
-            return name.end();
+            return pos_i32(name.end());
         }
     }
     if ast::is_binding_element(node) {
         if let Some(name) = node.as_binding_element().name() {
-            return name.end();
+            return pos_i32(name.end());
         }
     }
-    node.pos()
+    pos_i32(node.pos())
 }
 
 fn is_simple_type_for_message(t: Option<P<Type>>) -> bool {
@@ -182,8 +181,10 @@ pub fn create(_options: Option<&serde_json::Value>) -> Result<Box<dyn Rule>, Str
     Ok(Box::new(NoUselessDefaultAssignment))
 }
 
-const LISTENERS: &[Listener] =
-    &[Listener::Enter(Kind::BindingElement), Listener::Enter(Kind::Parameter)];
+const LISTENERS: &[Listener] = &[
+    Listener::Enter(Kind::BindingElement),
+    Listener::Enter(Kind::Parameter),
+];
 
 impl Rule for NoUselessDefaultAssignment {
     fn name(&self) -> &'static str {
@@ -210,7 +211,9 @@ fn get_type_of_binding_element(ctx: &mut Ctx, binding_element: P<Node>) -> Optio
         let be = binding_element.as_binding_element();
         let property_name_node = be.property_name().or_else(|| be.name());
         let property_name = get_property_name(property_name_node)?;
-        let symbol = ctx.checker.get_property_of_type(source_type, property_name)?;
+        let symbol = ctx
+            .checker
+            .get_property_of_type(source_type, property_name)?;
         if utils::is_symbol_flag_set(Some(symbol), tsrs_ast::SymbolFlags::Optional) {
             let parent = parent_pattern.parent();
             match parent {
@@ -224,7 +227,9 @@ fn get_type_of_binding_element(ctx: &mut Ctx, binding_element: P<Node>) -> Optio
                 _ => return None,
             }
         }
-        return ctx.checker.get_type_of_symbol_at_location(symbol, Some(binding_element));
+        return ctx
+            .checker
+            .get_type_of_symbol_at_location(symbol, Some(binding_element));
     }
     if ast::is_array_binding_pattern(parent_pattern) {
         let source_type = get_source_type_for_pattern(ctx, parent_pattern)?;
@@ -249,7 +254,9 @@ fn get_source_type_for_pattern(ctx: &mut Ctx, pattern: P<Node>) -> Option<P<Type
         if !ast::is_function_like(function_node) {
             return None;
         }
-        let signature = ctx.checker.get_signature_from_declaration_exported(function_node);
+        let signature = ctx
+            .checker
+            .get_signature_from_declaration_exported(function_node);
         let params = function_node.parameters();
         let mut param_index = find_node_index(params, parent);
         if param_index == -1 {
@@ -257,7 +264,10 @@ fn get_source_type_for_pattern(ctx: &mut Ctx, pattern: P<Node>) -> Option<P<Type
         }
         if signature.this_parameter().is_some() && !params.is_empty() {
             let first_parameter = params[0];
-            if first_parameter.name().is_some_and(|n| ast::is_identifier(n) && n.text() == "this") {
+            if first_parameter
+                .name()
+                .is_some_and(|n| ast::is_identifier(n) && n.text() == "this")
+            {
                 param_index -= 1;
             }
         }
@@ -265,7 +275,10 @@ fn get_source_type_for_pattern(ctx: &mut Ctx, pattern: P<Node>) -> Option<P<Type
         if param_index < 0 || param_index as usize >= parameters.len() {
             return None;
         }
-        return Some(ctx.checker.get_type_of_symbol(parameters[param_index as usize]));
+        return Some(
+            ctx.checker
+                .get_type_of_symbol(parameters[param_index as usize]),
+        );
     }
     if ast::is_binding_element(parent) {
         return get_type_of_binding_element(ctx, parent);
@@ -282,7 +295,7 @@ fn get_source_type_for_pattern(ctx: &mut Ctx, pattern: P<Node>) -> Option<P<Type
 }
 
 fn build_remove_default_fix(ctx: &Ctx, node: P<Node>) -> RuleFix {
-    ctx.fix_remove_range(get_default_assignment_start(node), node.end())
+    ctx.fix_remove_range(get_default_assignment_start(node), pos_i32(node.end()))
 }
 
 fn report_useless_default_assignment(
@@ -302,7 +315,11 @@ fn report_useless_default_assignment(
     }
     let (pos, end) = ctx.trim(initializer);
     let fixes = vec![build_remove_default_fix(ctx, node)];
-    let mut labeled_ranges = vec![LabeledRange { label: "Default value".to_string(), pos, end }];
+    let mut labeled_ranges = vec![LabeledRange {
+        label: "Default value".to_string(),
+        pos,
+        end,
+    }];
     if !type_text.is_empty() {
         if let Some(target_node) = get_assignment_target_node(node) {
             let (tpos, tend) = ctx.trim(target_node);
@@ -314,7 +331,12 @@ fn report_useless_default_assignment(
         }
     }
     ctx.report_diagnostic_with_suggestions(
-        RuleDiagnostic { pos, end, message, labeled_ranges },
+        RuleDiagnostic {
+            pos,
+            end,
+            message,
+            labeled_ranges,
+        },
         |_| {
             vec![RuleSuggestion {
                 message: build_remove_default_assignment_suggestion_message(),

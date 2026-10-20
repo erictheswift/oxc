@@ -20,7 +20,10 @@ pub fn matches_type_or_base_type(
     if t.object_flags().intersects(ObjectFlags::Reference) {
         target = t.target().unwrap();
     }
-    if target.object_flags().intersects(ObjectFlags::ClassOrInterface) {
+    if target
+        .object_flags()
+        .intersects(ObjectFlags::ClassOrInterface)
+    {
         for &base_type in c.get_base_types(target) {
             if matches_type_or_base_type(c, base_type, predicate) {
                 return true;

@@ -1,10 +1,10 @@
 // Port of internal/rules/no_deprecated/no_deprecated.go.
 
 use tsrs_ast::{self as ast, Kind, Node, Symbol, SymbolFlags};
-use tsrs_checker::{CheckMode, ContextFlags, LiteralValue, Type, TypeFlags};
+use tsrs_checker::{CheckMode, Checker, ContextFlags, LiteralValue, Type, TypeFlags};
 use tsrs_core::P;
 
-use crate::rule::{Ctx, Listener, Rule, RuleMessage, RuleVisitor, options_object};
+use crate::rule::{options_object, Ctx, Listener, Rule, RuleMessage, RuleVisitor};
 use crate::utils::{self, TypeOrValueSpecifier};
 
 fn build_deprecated_message(name: &str) -> RuleMessage {
@@ -12,7 +12,10 @@ fn build_deprecated_message(name: &str) -> RuleMessage {
 }
 
 fn build_deprecated_with_reason_message(name: &str, reason: &str) -> RuleMessage {
-    RuleMessage::new("deprecatedWithReason", format!("`{name}` is deprecated. {reason}"))
+    RuleMessage::new(
+        "deprecatedWithReason",
+        format!("`{name}` is deprecated. {reason}"),
+    )
 }
 
 fn format_property_name_for_report(name: &str) -> String {
@@ -47,7 +50,11 @@ fn get_call_like_node(node: P<Node>) -> Option<P<Node>> {
         }
         callee = parent;
     }
-    if is_node_callee_of_parent(callee) { Some(callee) } else { None }
+    if is_node_callee_of_parent(callee) {
+        Some(callee)
+    } else {
+        None
+    }
 }
 
 fn get_reported_node_name(node: P<Node>) -> String {
@@ -106,10 +113,11 @@ struct Visitor {
 
 fn has_deprecated_tag(jsdocs: &[P<Node>]) -> bool {
     jsdocs.iter().any(|jsdoc| {
-        jsdoc
-            .as_jsdoc()
-            .tags
-            .is_some_and(|tags| tags.nodes().iter().any(|&t| ast::is_jsdoc_deprecated_tag(t)))
+        jsdoc.as_jsdoc().tags.is_some_and(|tags| {
+            tags.nodes()
+                .iter()
+                .any(|&t| ast::is_jsdoc_deprecated_tag(t))
+        })
     })
 }
 
@@ -172,7 +180,7 @@ fn search_for_deprecation_in_aliases_chain(
         if is_deprecated {
             return (true, reason);
         }
-        if ctx.checker.get_declaration_of_alias_symbol(symbol).is_none() {
+        if Checker::get_declaration_of_alias_symbol(symbol).is_none() {
             break;
         }
         let Some(immediate) = ctx.checker.get_immediate_aliased_symbol(symbol) else {
@@ -191,7 +199,9 @@ fn get_call_like_deprecation(ctx: &mut Ctx, node: P<Node>) -> (bool, String) {
     let Some(ts_node) = node.parent() else {
         return (false, String::new());
     };
-    let signature = ctx.checker.get_resolved_signature(ts_node, None, CheckMode::Normal);
+    let signature = ctx
+        .checker
+        .get_resolved_signature(ts_node, None, CheckMode::Normal);
     let signature_decl = signature.declaration();
     if let Some(decl) = signature_decl {
         if ctx.checker.is_deprecated_declaration(decl) {
@@ -243,11 +253,15 @@ fn get_jsx_attribute_deprecation(
         Kind::JsxOpeningElement => element_node.as_jsx_opening_element().tag_name,
         _ => return (false, String::new()),
     };
-    let Some(contextual_type) = ctx.checker.get_contextual_type(tag_name, ContextFlags::None)
+    let Some(contextual_type) = ctx
+        .checker
+        .get_contextual_type(tag_name, ContextFlags::None)
     else {
         return (false, String::new());
     };
-    let symbol = ctx.checker.get_property_of_type(contextual_type, property_name);
+    let symbol = ctx
+        .checker
+        .get_property_of_type(contextual_type, property_name);
     get_js_doc_deprecation(ctx, symbol)
 }
 
@@ -257,7 +271,7 @@ fn get_object_literal_property_name(ctx: &mut Ctx, name: Option<P<Node>>) -> Opt
         name = name.as_computed_property_name().expression;
         match name.kind() {
             Kind::StringLiteral | Kind::NumericLiteral | Kind::BigIntLiteral => {
-                return Some(name.text().to_string());
+                return Some(name.text().to_string())
             }
             _ => {}
         }
@@ -308,12 +322,15 @@ fn get_contextual_object_literal_property_deprecation(
     let Some(property_name) = get_object_literal_property_name(ctx, name) else {
         return res;
     };
-    let Some(contextual_type) =
-        ctx.checker.get_apparent_type_of_contextual_type(parent, ContextFlags::None)
+    let Some(contextual_type) = ctx
+        .checker
+        .get_apparent_type_of_contextual_type(parent, ContextFlags::None)
     else {
         return res;
     };
-    let property = ctx.checker.get_property_of_type(contextual_type, &property_name);
+    let property = ctx
+        .checker
+        .get_property_of_type(contextual_type, &property_name);
     res.property_name = property_name;
     res.contextual_type = Some(contextual_type);
     res.property = property;
@@ -362,7 +379,10 @@ impl Visitor {
         if d.reason.is_empty() {
             ctx.report_node(name, build_deprecated_message(&reported));
         } else {
-            ctx.report_node(name, build_deprecated_with_reason_message(&reported, d.reason.trim()));
+            ctx.report_node(
+                name,
+                build_deprecated_with_reason_message(&reported, d.reason.trim()),
+            );
         }
     }
 
@@ -409,7 +429,9 @@ impl Visitor {
         let Some(property_name) = literal_value_name(property_type) else {
             return;
         };
-        let property = ctx.checker.get_property_of_type(object_type, &property_name);
+        let property = ctx
+            .checker
+            .get_property_of_type(object_type, &property_name);
         let (is_deprecated, reason) = get_js_doc_deprecation(ctx, property);
         if !is_deprecated {
             return;
@@ -418,7 +440,10 @@ impl Visitor {
             return;
         }
         if reason.is_empty() {
-            ctx.report_node(argument_expression, build_deprecated_message(&property_name));
+            ctx.report_node(
+                argument_expression,
+                build_deprecated_message(&property_name),
+            );
         } else {
             ctx.report_node(
                 argument_expression,
@@ -462,10 +487,13 @@ fn get_binding_pattern_source_type(ctx: &mut Ctx, binding_pattern: P<Node>) -> O
                     if property_name.is_empty() {
                         return None;
                     }
-                    if let Some(property) =
-                        ctx.checker.get_property_of_type(parent_source_type, property_name)
+                    if let Some(property) = ctx
+                        .checker
+                        .get_property_of_type(parent_source_type, property_name)
                     {
-                        return ctx.checker.get_type_of_symbol_at_location(property, Some(cur));
+                        return ctx
+                            .checker
+                            .get_type_of_symbol_at_location(property, Some(cur));
                     }
                 }
                 return None;
@@ -473,7 +501,9 @@ fn get_binding_pattern_source_type(ctx: &mut Ctx, binding_pattern: P<Node>) -> O
             Kind::ArrayBindingPattern => {
                 let parent_source_type = get_binding_pattern_source_type(ctx, cur.parent()?)?;
                 if let Some(property) = ctx.checker.get_property_of_type(parent_source_type, "0") {
-                    return ctx.checker.get_type_of_symbol_at_location(property, Some(cur));
+                    return ctx
+                        .checker
+                        .get_type_of_symbol_at_location(property, Some(cur));
                 }
                 return Some(parent_source_type);
             }
@@ -511,8 +541,9 @@ fn check_property_symbols(
     }
     // Check shorthand assignment value symbol
     if let Some(value_declaration) = property_symbol.and_then(|s| s.value_declaration()) {
-        let value_symbol =
-            ctx.checker.get_shorthand_assignment_value_symbol(Some(value_declaration));
+        let value_symbol = ctx
+            .checker
+            .get_shorthand_assignment_value_symbol(Some(value_declaration));
         let (is_deprecated, reason) = get_js_doc_deprecation(ctx, value_symbol);
         if is_deprecated {
             return Some((true, reason));
@@ -580,7 +611,9 @@ fn is_declaration(node: P<Node>) -> bool {
         Kind::BindingElement => {
             // Array binding elements only declare locals. Object binding patterns are
             // handled separately because they also represent property reads.
-            parent.parent().is_some_and(|p| p.kind() == Kind::ArrayBindingPattern)
+            parent
+                .parent()
+                .is_some_and(|p| p.kind() == Kind::ArrayBindingPattern)
                 && parent.name() == Some(node)
         }
         Kind::ClassExpression
@@ -596,7 +629,9 @@ fn is_declaration(node: P<Node>) -> bool {
             if parent.as_property_assignment().initializer() == node {
                 return false;
             }
-            parent.parent().is_some_and(|p| p.kind() == Kind::ObjectLiteralExpression)
+            parent
+                .parent()
+                .is_some_and(|p| p.kind() == Kind::ObjectLiteralExpression)
         }
         Kind::ArrowFunction
         | Kind::FunctionDeclaration
